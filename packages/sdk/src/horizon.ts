@@ -52,9 +52,30 @@ export function supplyFromRecord(r: HorizonAssetRecord): SupplyBuckets {
   return { ...b, total };
 }
 
+/**
+ * A Horizon request that returned a status, as opposed to one that never
+ * connected. The status matters: 404 means Horizon has no such thing, while
+ * 429 or a 5xx means Horizon itself is in trouble and the same request may
+ * succeed later.
+ */
+export class HorizonError extends Error {
+  constructor(
+    readonly status: number,
+    readonly url: string,
+  ) {
+    super(`${url}: ${status}`);
+    this.name = "HorizonError";
+  }
+
+  /** True when Horizon is rate limiting or failing, rather than answering. */
+  get isProviderFailure(): boolean {
+    return this.status === 429 || this.status >= 500;
+  }
+}
+
 async function getJson<T>(url: string, fetchImpl: typeof fetch): Promise<T> {
   const res = await fetchImpl(url, { headers: { Accept: "application/json" } });
-  if (!res.ok) throw new Error(`${url}: ${res.status}`);
+  if (!res.ok) throw new HorizonError(res.status, url);
   return (await res.json()) as T;
 }
 

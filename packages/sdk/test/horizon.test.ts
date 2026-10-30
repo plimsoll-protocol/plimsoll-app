@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  HorizonError,
   checkStellarToml,
   fetchAssetRecord,
   findCurrency,
@@ -91,6 +92,29 @@ describe("network helpers", () => {
       "https://h.example/assets?asset_code=NOPE&asset_issuer=GX": { body: '{"_embedded":{"records":[]}}' },
     });
     expect(await fetchAssetRecord("https://h.example/", "NOPE", "GX", f)).toBeNull();
+  });
+
+  // 404 is Horizon answering; 429 and 5xx are Horizon failing. Callers that
+  // retry or degrade need to tell those apart.
+  it("fetchAssetRecord reports the status and whether Horizon itself failed", async () => {
+    const f = fake({
+      "https://h.example/assets?asset_code=A&asset_issuer=G1": { status: 404, body: "" },
+      "https://h.example/assets?asset_code=A&asset_issuer=G2": { status: 429, body: "" },
+      "https://h.example/assets?asset_code=A&asset_issuer=G3": { status: 503, body: "" },
+    });
+    const statusOf = async (issuer: string) => {
+      try {
+        await fetchAssetRecord("https://h.example/", "A", issuer, f);
+        return null;
+      } catch (err) {
+        expect(err).toBeInstanceOf(HorizonError);
+        const e = err as HorizonError;
+        return [e.status, e.isProviderFailure] as const;
+      }
+    };
+    expect(await statusOf("G1")).toEqual([404, false]);
+    expect(await statusOf("G2")).toEqual([429, true]);
+    expect(await statusOf("G3")).toEqual([503, true]);
   });
 });
 

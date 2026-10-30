@@ -1,4 +1,5 @@
 import type { TestContext } from "vitest";
+import { HorizonError } from "../src/horizon";
 
 /**
  * Node's fetch gives up on a connection after 10 seconds, well inside these
@@ -19,6 +20,9 @@ const UNREACHABLE = new Set([
 ]);
 
 function unreachableReason(err: unknown): string | null {
+  // Horizon rate limiting or failing is the same kind of event as not being
+  // reachable at all: it says nothing about this code.
+  if (err instanceof HorizonError && err.isProviderFailure) return `HTTP ${err.status}`;
   for (let e: unknown = err, depth = 0; e instanceof Error && depth < 4; depth++) {
     const code = (e as { code?: unknown }).code;
     if (typeof code === "string" && UNREACHABLE.has(code)) return code;
