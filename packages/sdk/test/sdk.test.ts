@@ -23,6 +23,7 @@ import {
   tierFromName,
   tierLabel,
 } from "../src/index";
+import { live } from "./live";
 
 describe("format", () => {
   it("formats smallest units", () => {
@@ -159,32 +160,36 @@ describe.skipIf(!process.env.PLIMSOLL_LIVE)("live testnet", () => {
   const client = new PlimsollContracts(TESTNET);
   const pusd = TESTNET.assets.PUSD!.sac;
 
-  it("reads the listed PUSD asset", async () => {
-    const asset = await client.getAsset(pusd);
+  it("reads the listed PUSD asset", async (ctx) => {
+    const asset = await live(ctx, () => client.getAsset(pusd));
     expect(asset?.code).toBe("PUSD");
     expect(asset?.issuer).toBe(TESTNET.assets.PUSD!.issuer);
   });
 
-  it("reads coverage and the issuer report", async () => {
-    const cov = await client.coverage(pusd, Tier.Transcribed);
+  it("reads coverage and the issuer report", async (ctx) => {
+    const cov = await live(ctx, () => client.coverage(pusd, Tier.Transcribed));
     expect(cov).not.toBeNull();
     expect(cov!.bps).toBeGreaterThan(0);
-    const report = await client.getReport(pusd, Tier.IssuerSigned);
+    const report = await live(ctx, () => client.getReport(pusd, Tier.IssuerSigned));
     expect(report?.reporter).toBe(TESTNET.assets.PUSD!.issuer);
-    expect(await client.isCovered(pusd, 0, 10 * 365 * 86_400, Tier.Transcribed)).toBe(true);
+    const covered = await live(ctx, () => client.isCovered(pusd, 0, 10 * 365 * 86_400, Tier.Transcribed));
+    expect(covered).toBe(true);
   });
 
-  it("reports the under-backed QUSD demo as not covered", async () => {
+  it("reports the under-backed QUSD demo as not covered", async (ctx) => {
     const qusd = TESTNET.assets.QUSD!.sac;
-    const cov = await client.coverage(qusd, Tier.Transcribed);
+    const cov = await live(ctx, () => client.coverage(qusd, Tier.Transcribed));
     expect(cov).not.toBeNull();
     expect(cov!.bps).toBeLessThan(10_000);
     expect(cov!.tier).toBe(Tier.Transcribed);
-    expect(await client.isCovered(qusd, 10_000, 10 * 365 * 86_400, Tier.Transcribed)).toBe(false);
+    const covered = await live(ctx, () => client.isCovered(qusd, 10_000, 10 * 365 * 86_400, Tier.Transcribed));
+    expect(covered).toBe(false);
   });
 
-  it("knows the registered supply poster", async () => {
-    const info = await client.getReporter("GDACI55IMI5DDZWMZ2EAXWK57AV75VE4626YYBAHQJYDV7QFPNNFK6HJ");
+  it("knows the registered supply poster", async (ctx) => {
+    const info = await live(ctx, () =>
+      client.getReporter("GDACI55IMI5DDZWMZ2EAXWK57AV75VE4626YYBAHQJYDV7QFPNNFK6HJ"),
+    );
     expect(info?.name).toBe("Plimsoll indexer");
   });
 }, 60_000);

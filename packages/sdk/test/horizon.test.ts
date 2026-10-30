@@ -6,6 +6,7 @@ import {
   supplyFromRecord,
   type HorizonAssetRecord,
 } from "../src/index";
+import { live } from "./live";
 
 // Same figures as plimsoll-indexer/internal/horizon/supply_test.go, so the
 // TypeScript and Go supply rules are pinned to the same answer.
@@ -95,11 +96,13 @@ describe("network helpers", () => {
 
 // Reads mainnet Horizon. Run with PLIMSOLL_LIVE=1.
 describe.skipIf(!process.env.PLIMSOLL_LIVE)("live mainnet", () => {
-  it("reads Circle USDC supply on Stellar", async () => {
-    const r = await fetchAssetRecord(
-      "https://horizon.stellar.org",
-      "USDC",
-      "GA5ZSEJYB37JRC5AVCIA5MOP4RHTM335X2KGX3IHOJAPP5RE34K4KZVN",
+  it("reads Circle USDC supply on Stellar", async (ctx) => {
+    const r = await live(ctx, () =>
+      fetchAssetRecord(
+        "https://horizon.stellar.org",
+        "USDC",
+        "GA5ZSEJYB37JRC5AVCIA5MOP4RHTM335X2KGX3IHOJAPP5RE34K4KZVN",
+      ),
     );
     expect(r).not.toBeNull();
     // More than 100 million USDC circulate on Stellar.
