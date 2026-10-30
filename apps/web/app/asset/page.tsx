@@ -20,7 +20,7 @@ import {
 } from "@plimsoll/sdk";
 import { Gauge, Skeleton, Stat, StatusPill, TierPill, nowSecs, ratioText, statusOf } from "@/components/ui";
 import { config, explorer } from "@/lib/config";
-import { contracts, indexer, loadAsset, type AssetView, type ReportView } from "@/lib/data";
+import { contracts, indexer, loadAsset, type AssetView, type Origin, type ReportView } from "@/lib/data";
 
 export default function AssetPage() {
   return (
@@ -121,11 +121,7 @@ function AssetDetail() {
         <Stat
           label="Supply posted"
           value={asset.supply ? ago(now - asset.supply.postedAt) : "—"}
-          sub={
-            asset.supply?.txHash ? (
-              <a href={explorer.tx(asset.supply.txHash)} target="_blank" rel="noreferrer">transaction</a>
-            ) : undefined
-          }
+          sub={asset.supply ? <Provenance view={asset.supply} /> : undefined}
         />
         <Stat
           label="Report as of"
@@ -178,6 +174,24 @@ function AssetDetail() {
   );
 }
 
+/**
+ * Says how a figure reached us. A figure observed in an event names the
+ * transaction that produced it. One the indexer read back from contract state,
+ * to fill a gap in event ingestion, has no transaction to name, and saying so
+ * is better than leaving a blank where a link usually is.
+ */
+function Provenance({ view }: { view: { txHash?: string; origin: Origin } }) {
+  if (view.txHash) {
+    return (
+      <a href={explorer.tx(view.txHash)} target="_blank" rel="noreferrer">
+        transaction
+      </a>
+    );
+  }
+  if (view.origin === "chain") return <>read from contract state, no transaction recorded</>;
+  return null;
+}
+
 function ReportRow({ report, supply, issuer, now }: { report: ReportView; supply: bigint | undefined; issuer: string; now: number }) {
   const covers = supply && supply > 0n ? bpsToPercent(Number((report.amount * 10_000n) / supply)) : "—";
   return (
@@ -194,9 +208,7 @@ function ReportRow({ report, supply, issuer, now }: { report: ReportView; supply
           {shortAddress(report.reporter)}
         </a>
         {report.reporter === issuer ? <div className="sub">issuer account</div> : null}
-        {report.txHash ? (
-          <div className="sub"><a href={explorer.tx(report.txHash)} target="_blank" rel="noreferrer">transaction</a></div>
-        ) : null}
+        <div className="sub"><Provenance view={report} /></div>
       </td>
       <td>
         <a href={report.docUri} target="_blank" rel="noreferrer">Open</a>

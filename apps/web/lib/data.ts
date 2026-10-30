@@ -4,9 +4,18 @@ import {
   Tier,
   tierFromName,
   type IndexerAsset,
+  type IndexerSource,
   type IndexerToml,
 } from "@plimsoll/sdk";
 import { config } from "./config";
+
+/**
+ * How a figure reached us. Not the same as AssetView.source, which says which
+ * service answered: a figure read from the indexer may still have been
+ * recovered from contract state rather than observed in an event, and then no
+ * transaction can be shown for it.
+ */
+export type Origin = IndexerSource;
 
 /** One report, normalised from either source. Times are unix seconds. */
 export interface ReportView {
@@ -18,6 +27,7 @@ export interface ReportView {
   docHash: string;
   docUri: string;
   txHash?: string;
+  origin: Origin;
 }
 
 export interface SupplyView {
@@ -27,6 +37,7 @@ export interface SupplyView {
   breakdownHash: string;
   poster: string;
   txHash?: string;
+  origin: Origin;
 }
 
 export interface CoverageView {
@@ -77,6 +88,7 @@ function fromIndexer(a: IndexerAsset): AssetView {
       docHash: r.doc_hash,
       docUri: r.doc_uri,
       txHash: r.tx_hash,
+      origin: r.source ?? "event",
     };
   }
   const c = a.coverage;
@@ -91,6 +103,7 @@ function fromIndexer(a: IndexerAsset): AssetView {
       breakdownHash: a.supply.breakdown_hash,
       poster: a.supply.poster,
       txHash: a.supply.tx_hash,
+      origin: a.supply.source ?? "event",
     },
     reports,
     coverage: c && {
@@ -117,7 +130,8 @@ export async function loadFromChain(sac: string): Promise<AssetView | null> {
     ...tiers.map((t) => contracts.getReport(sac, t)),
   ]);
   const reports: AssetView["reports"] = {};
-  for (const r of reportList) if (r) reports[r.tier] = r;
+  // Read from contract state, so there is no event or transaction behind these.
+  for (const r of reportList) if (r) reports[r.tier] = { ...r, origin: "chain" };
   return {
     sac,
     code: asset.code,
@@ -128,6 +142,7 @@ export async function loadFromChain(sac: string): Promise<AssetView | null> {
       postedAt: supply.timestamp,
       breakdownHash: supply.breakdownHash,
       poster: supply.poster,
+      origin: "chain",
     },
     reports,
     coverage: coverage && {

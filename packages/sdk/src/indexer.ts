@@ -1,5 +1,14 @@
 /** Typed client for the plimsoll-indexer HTTP API. */
 
+/**
+ * Where a figure came from. "event" means it was decoded from a contract
+ * event, and tx_hash names the transaction that produced it. "chain" means the
+ * indexer read it back from contract state to repair a gap in event ingestion,
+ * and tx_hash is empty because the originating transaction is not recoverable.
+ * Absent on an indexer older than this field; treat that as "event".
+ */
+export type IndexerSource = "event" | "chain";
+
 export interface IndexerSupply {
   amount: string;
   ledger: number;
@@ -7,6 +16,7 @@ export interface IndexerSupply {
   breakdown_hash: string;
   poster: string;
   tx_hash: string;
+  source?: IndexerSource;
 }
 
 export interface IndexerReport {
@@ -18,6 +28,7 @@ export interface IndexerReport {
   doc_hash: string;
   doc_uri: string;
   tx_hash: string;
+  source?: IndexerSource;
 }
 
 export interface IndexerCoverage {
