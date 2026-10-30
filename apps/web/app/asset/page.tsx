@@ -20,7 +20,15 @@ import {
 } from "@plimsoll/sdk";
 import { Gauge, Skeleton, Stat, StatusPill, TierPill, nowSecs, ratioText, statusOf } from "@/components/ui";
 import { config, explorer } from "@/lib/config";
-import { contracts, indexer, loadAsset, type AssetView, type Origin, type ReportView } from "@/lib/data";
+import {
+  contracts,
+  indexer,
+  loadAsset,
+  loadReporterNames,
+  type AssetView,
+  type Origin,
+  type ReportView,
+} from "@/lib/data";
 
 export default function AssetPage() {
   return (
@@ -35,6 +43,7 @@ function AssetDetail() {
   const [asset, setAsset] = useState<AssetView | null | undefined>(undefined);
   const [error, setError] = useState<string | null>(null);
   const [now, setNow] = useState(nowSecs());
+  const [names, setNames] = useState<ReadonlyMap<string, string>>(new Map());
 
   useEffect(() => {
     if (!sac) return;
@@ -42,6 +51,16 @@ function AssetDetail() {
       .then((a) => {
         setAsset(a);
         setNow(nowSecs());
+        if (!a) return;
+        const addresses = Object.values(a.reports)
+          .filter((r): r is ReportView => r !== undefined)
+          .map((r) => r.reporter);
+        if (a.supply) addresses.push(a.supply.poster);
+        // Names are an improvement on the addresses already shown, not a
+        // precondition for them, so a failed lookup leaves the page as it is.
+        loadReporterNames(addresses)
+          .then(setNames)
+          .catch((e: unknown) => console.warn("Could not load reporter names", e));
       })
       .catch((e: unknown) => setError(e instanceof Error ? e.message : String(e)));
   }, [sac]);
@@ -154,7 +173,14 @@ function AssetDetail() {
             {tiers.map((tier) => {
               const r = asset.reports[tier];
               return r ? (
-                <ReportRow key={tier} report={r} supply={asset.supply?.amount} issuer={asset.issuer} now={now} />
+                <ReportRow
+                  key={tier}
+                  report={r}
+                  supply={asset.supply?.amount}
+                  issuer={asset.issuer}
+                  now={now}
+                  name={names.get(r.reporter)}
+                />
               ) : (
                 <tr key={tier}>
                   <td>{tierLabel(tier)}</td>
@@ -166,7 +192,13 @@ function AssetDetail() {
         </table>
       </div>
 
-      {asset.supply ? <SupplySection hash={asset.supply.breakdownHash} poster={asset.supply.poster} /> : null}
+      {asset.supply ? (
+        <SupplySection
+          hash={asset.supply.breakdownHash}
+          poster={asset.supply.poster}
+          posterName={names.get(asset.supply.poster)}
+        />
+      ) : null}
 
       <h2>What the issuer publishes</h2>
       <IssuerToml asset={asset} />
@@ -192,7 +224,19 @@ function Provenance({ view }: { view: { txHash?: string; origin: Origin } }) {
   return null;
 }
 
-function ReportRow({ report, supply, issuer, now }: { report: ReportView; supply: bigint | undefined; issuer: string; now: number }) {
+function ReportRow({
+  report,
+  supply,
+  issuer,
+  now,
+  name,
+}: {
+  report: ReportView;
+  supply: bigint | undefined;
+  issuer: string;
+  now: number;
+  name?: string;
+}) {
   const covers = supply && supply > 0n ? bpsToPercent(Number((report.amount * 10_000n) / supply)) : "—";
   return (
     <tr>
@@ -204,7 +248,17 @@ function ReportRow({ report, supply, issuer, now }: { report: ReportView; supply
         <div className="sub">{ago(now - report.asOf)}</div>
       </td>
       <td>
-        <a className="mono" href={explorer.account(report.reporter)} target="_blank" rel="noreferrer">
+        {/* The registry name when there is one, with the address it belongs to
+            underneath, so the claim stays checkable against the ledger. An
+            issuer signs with its own account and is not a registered reporter,
+            so it has no name here and keeps the note it always had. */}
+        {name ? <div>{name}</div> : null}
+        <a
+          className={name ? "mono sub" : "mono"}
+          href={explorer.account(report.reporter)}
+          target="_blank"
+          rel="noreferrer"
+        >
           {shortAddress(report.reporter)}
         </a>
         {report.reporter === issuer ? <div className="sub">issuer account</div> : null}
@@ -279,7 +333,7 @@ function LiveCheck({ sac }: { sac: string }) {
   );
 }
 
-function SupplySection({ hash, poster }: { hash: string; poster: string }) {
+function SupplySection({ hash, poster, posterName }: { hash: string; poster: string; posterName?: string }) {
   const [breakdown, setBreakdown] = useState<SupplyBreakdown | null>(null);
   const [verified, setVerified] = useState<boolean | null>(null);
   useEffect(() => {
@@ -305,7 +359,8 @@ function SupplySection({ hash, poster }: { hash: string; poster: string }) {
     <>
       <h2>How supply was counted</h2>
       <p className="sub">
-        Posted by <a className="mono" href={explorer.account(poster)} target="_blank" rel="noreferrer">{shortAddress(poster)}</a>.
+        Posted by {posterName ? `${posterName}, ` : null}
+        <a className="mono" href={explorer.account(poster)} target="_blank" rel="noreferrer">{shortAddress(poster)}</a>.
         Breakdown hash <code className="break">{hash}</code>
       </p>
       {breakdown ? (

@@ -184,3 +184,52 @@ export async function loadAsset(sac: string): Promise<AssetView | null> {
   }
   return loadFromChain(sac);
 }
+
+/**
+ * Registry names for reporter addresses, so a report can say who signed it
+ * rather than only showing a truncated address.
+ *
+ * Cached for the life of the page: the registry changes when an admin
+ * registers or revokes a reporter, which is rare, and a dashboard would
+ * otherwise re-ask for the same handful of addresses on every navigation. A
+ * name that is absent is cached too, so an unregistered address is asked about
+ * once.
+ */
+const nameCache = new Map<string, string | null>();
+
+export async function loadReporterNames(addresses: readonly string[]): Promise<Map<string, string>> {
+  const wanted = [...new Set(addresses)].filter((a) => a.length > 0);
+  const missing = wanted.filter((a) => !nameCache.has(a));
+
+  if (missing.length > 0) {
+    if (indexer) {
+      try {
+        // One request covers every reporter, so ask once however many are missing.
+        const all = await indexer.reporters();
+        for (const r of all) nameCache.set(r.address, r.name);
+        for (const a of missing) if (!nameCache.has(a)) nameCache.set(a, null);
+      } catch (err) {
+        console.warn("Indexer unavailable, reading reporter names from chain", err);
+      }
+    }
+    const stillMissing = missing.filter((a) => !nameCache.has(a));
+    await Promise.all(
+      stillMissing.map(async (a) => {
+        try {
+          const info = await contracts.getReporter(a);
+          nameCache.set(a, info?.name ?? null);
+        } catch (err) {
+          // Leave it uncached: a failed read is not evidence of no name.
+          console.warn(`Could not read the registry name for ${a}`, err);
+        }
+      }),
+    );
+  }
+
+  const out = new Map<string, string>();
+  for (const a of wanted) {
+    const name = nameCache.get(a);
+    if (name) out.set(a, name);
+  }
+  return out;
+}
