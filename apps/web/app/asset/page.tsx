@@ -87,7 +87,7 @@ function AssetDetail() {
   }
 
   const c = asset.coverage;
-  const status = statusOf(c?.bps, c?.reportAsOf, now);
+  const status = statusOf(c?.bps, c?.reportAsOf, c?.supplyPostedAt, now);
   const tiers = [Tier.AuditorSigned, Tier.IssuerSigned, Tier.Transcribed];
 
   return (

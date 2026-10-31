@@ -44,14 +44,46 @@ export function bpsToPercent(bps: number): string | null {
 
 export type CoverageStatus = "covered" | "under" | "stale" | "unknown";
 
-/** Classify a coverage reading for display. */
+/**
+ * The freshness window assumed when a caller names none.
+ *
+ * There is no canonical window in the protocol: `is_covered` takes `max_age`
+ * from whoever is asking, and the demo's PUSD vault asks for 7 days. Pass the
+ * window your own consumer uses; the default is the stricter of the demo's two
+ * vaults, because a reading shown as backed when the contract would refuse it
+ * is the one wrong answer worth avoiding.
+ */
+export const DEFAULT_MAX_AGE_SECONDS = 7 * 24 * 3600;
+
+/** How old the two halves of a coverage reading are, in seconds. */
+export interface CoverageAges {
+  /** The reserve report the ratio was computed against. */
+  report: number | null | undefined;
+  /**
+   * The supply snapshot it was divided by. Optional only because a caller may
+   * not have it; when it is known, pass it — `is_covered` requires both halves
+   * to be fresh and returns false if either has expired.
+   */
+  supply?: number | null;
+}
+
+/**
+ * Classify a coverage reading for display, the way `is_covered` would judge it.
+ *
+ * Both ages matter. Showing a ratio as backed while the contract refuses it is
+ * how the testnet demo misled for sixteen days: the page compared only the
+ * report's age against a 31-day window, so a report that had expired against
+ * the vault's 7-day window still read "Fully backed", and during an earlier
+ * ingestion outage a nine-day-old supply snapshot did too.
+ */
 export function coverageStatus(
   bps: number | null | undefined,
-  ageSeconds: number | null | undefined,
-  maxAgeSeconds = 31 * 24 * 3600,
+  ages: CoverageAges,
+  maxAgeSeconds: number = DEFAULT_MAX_AGE_SECONDS,
 ): CoverageStatus {
-  if (bps == null || ageSeconds == null) return "unknown";
-  if (ageSeconds > maxAgeSeconds) return "stale";
+  if (bps == null || ages.report == null) return "unknown";
+  if (ages.report > maxAgeSeconds) return "stale";
+  if (ages.supply != null && ages.supply > maxAgeSeconds) return "stale";
   return bps >= 10_000 ? "covered" : "under";
 }
 

@@ -32,9 +32,21 @@ export function TierPill({ tier }: { tier: Tier }) {
   return <span className="pill pill-tier">{tierLabel(tier)}</span>;
 }
 
-export function statusOf(bps: number | undefined, reportAsOf: number | undefined, now: number) {
-  if (bps === undefined || reportAsOf === undefined) return coverageStatus(null, null);
-  return coverageStatus(bps, now - reportAsOf);
+/**
+ * The status of a coverage reading, judged as `is_covered` would judge it:
+ * against the age of the supply snapshot as well as the report's.
+ */
+export function statusOf(
+  bps: number | undefined,
+  reportAsOf: number | undefined,
+  supplyPostedAt: number | undefined,
+  now: number,
+) {
+  if (bps === undefined || reportAsOf === undefined) return coverageStatus(null, { report: null });
+  return coverageStatus(bps, {
+    report: now - reportAsOf,
+    supply: supplyPostedAt === undefined ? null : now - supplyPostedAt,
+  });
 }
 
 export function ratioText(bps: number | undefined): string {

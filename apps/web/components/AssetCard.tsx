@@ -5,7 +5,7 @@ import { Gauge, StatusPill, TierPill, ratioText, statusOf } from "./ui";
 
 export function AssetCard({ asset, now }: { asset: AssetView; now: number }) {
   const c = asset.coverage;
-  const status = statusOf(c?.bps, c?.reportAsOf, now);
+  const status = statusOf(c?.bps, c?.reportAsOf, c?.supplyPostedAt, now);
   return (
     <Link href={`/asset/?sac=${asset.sac}`} className="card asset-card">
       <div className="asset-head">

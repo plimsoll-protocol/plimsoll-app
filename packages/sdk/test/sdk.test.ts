@@ -2,6 +2,7 @@ import { Buffer } from "buffer";
 import { scValToNative } from "@stellar/stellar-sdk";
 import { describe, expect, it } from "vitest";
 import {
+  DEFAULT_MAX_AGE_SECONDS,
   IndexerClient,
   IndexerError,
   NOTHING_OWED_BPS,
@@ -50,10 +51,34 @@ describe("format", () => {
   });
 
   it("classifies status", () => {
-    expect(coverageStatus(10_000, 60)).toBe("covered");
-    expect(coverageStatus(9_999, 60)).toBe("under");
-    expect(coverageStatus(10_500, 40 * 86_400)).toBe("stale");
-    expect(coverageStatus(null, 60)).toBe("unknown");
+    expect(coverageStatus(10_000, { report: 60 })).toBe("covered");
+    expect(coverageStatus(9_999, { report: 60 })).toBe("under");
+    expect(coverageStatus(10_500, { report: 40 * 86_400 })).toBe("stale");
+    expect(coverageStatus(null, { report: 60 })).toBe("unknown");
+    expect(coverageStatus(10_500, { report: null })).toBe("unknown");
+  });
+
+  // The demo's PUSD vault asks for a report at most 7 days old. A page that
+  // judged against 31 days called an expired report "Fully backed" for
+  // sixteen days while the vault refused every deposit.
+  it("expires a reading at the window the consumer requires", () => {
+    expect(DEFAULT_MAX_AGE_SECONDS).toBe(7 * 24 * 3600);
+    const week = DEFAULT_MAX_AGE_SECONDS;
+    expect(coverageStatus(10_201, { report: week })).toBe("covered");
+    expect(coverageStatus(10_201, { report: week + 1 })).toBe("stale");
+    // A caller with a laxer consumer says so, and gets the laxer answer.
+    expect(coverageStatus(10_201, { report: week + 1 }, 31 * 86_400)).toBe("covered");
+  });
+
+  // is_covered needs both halves fresh, so a current report divided by a
+  // stale supply snapshot is not a covered reading. This is what nine days of
+  // stalled ingestion looked like from the page.
+  it("expires a reading when only the supply snapshot is stale", () => {
+    expect(coverageStatus(10_201, { report: 60, supply: 9 * 86_400 })).toBe("stale");
+    expect(coverageStatus(10_201, { report: 60, supply: 60 })).toBe("covered");
+    // Not knowing the supply's age is not evidence that it is fresh, but it is
+    // all a caller without it can say.
+    expect(coverageStatus(10_201, { report: 60, supply: null })).toBe("covered");
   });
 
   it("labels and shortens", () => {
