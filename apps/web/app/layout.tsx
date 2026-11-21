@@ -1,5 +1,8 @@
 import type { Metadata, Viewport } from "next";
 import { Footer, Header } from "@/components/SiteChrome";
+import { config } from "@/lib/config";
+import { buildCsp } from "@/lib/csp";
+import { MAINNET_HORIZON } from "@/lib/mainnet";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -17,9 +20,23 @@ export const viewport: Viewport = {
   ],
 };
 
+// Production only: next dev needs inline and eval scripts for hot reload.
+const csp =
+  process.env.NODE_ENV === "production"
+    ? buildCsp({
+        endpoints: [
+          config.network.rpcUrl,
+          config.network.horizonUrl ?? "",
+          config.indexerUrl,
+          MAINNET_HORIZON,
+        ],
+      })
+    : null;
+
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en">
+      <head>{csp ? <meta httpEquiv="Content-Security-Policy" content={csp} /> : null}</head>
       <body>
         <Header />
         <main>

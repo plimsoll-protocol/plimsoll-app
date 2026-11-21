@@ -142,6 +142,40 @@ p {
   color: var(--ink);
   text-decoration: underline;
 }
+.nav-toggle {
+  display: none;
+  margin-left: auto;
+}
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+@media (max-width: 760px) {
+  .site-header .wrap {
+    gap: 12px;
+  }
+  .nav-toggle {
+    display: inline-flex;
+  }
+  .nav {
+    display: none;
+    flex-direction: column;
+    gap: 0;
+    flex: 1 0 100%;
+    margin-left: 0;
+    padding-bottom: 10px;
+  }
+  .nav[data-open="true"] {
+    display: flex;
+  }
+  .nav a {
+    padding: 10px 0;
+  }
+}
 .net-pill {
   font-size: 0.75rem;
   text-transform: uppercase;

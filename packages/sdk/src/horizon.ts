@@ -94,6 +94,23 @@ export async function fetchAssetRecord(
   return page._embedded.records[0] ?? null;
 }
 
+/**
+ * Asset codes an issuer has issued, from Horizon /assets, sorted. Reads one
+ * page of up to 200 records; an issuer with more returns the first 200 by code.
+ */
+export async function fetchIssuerAssetCodes(
+  horizonUrl: string,
+  issuer: string,
+  fetchImpl: typeof fetch = (...a) => fetch(...a),
+): Promise<string[]> {
+  const q = new URLSearchParams({ asset_issuer: issuer, limit: "200", order: "asc" });
+  const page = await getJson<{ _embedded: { records: { asset_code: string }[] } }>(
+    `${horizonUrl.replace(/\/+$/, "")}/assets?${q}`,
+    fetchImpl,
+  );
+  return [...new Set(page._embedded.records.map((r) => r.asset_code))].sort();
+}
+
 /** The issuer account's home_domain, or "" if unset. */
 export async function fetchHomeDomain(
   horizonUrl: string,

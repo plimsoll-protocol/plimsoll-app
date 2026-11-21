@@ -8,7 +8,7 @@ export interface WatchedAsset {
   code: string;
   issuer: string;
   label: string;
-  kind: "Stablecoin" | "Tokenized fund";
+  kind: "Stablecoin" | "Tokenized fund" | "Custom";
 }
 
 export const MAINNET_HORIZON = "https://horizon.stellar.org";

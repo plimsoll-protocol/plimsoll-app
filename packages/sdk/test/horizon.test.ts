@@ -3,6 +3,7 @@ import {
   HorizonError,
   checkStellarToml,
   fetchAssetRecord,
+  fetchIssuerAssetCodes,
   findCurrency,
   supplyFromRecord,
   type HorizonAssetRecord,
@@ -124,6 +125,23 @@ describe("network helpers", () => {
     expect(await statusOf("G1")).toEqual([404, false]);
     expect(await statusOf("G2")).toEqual([429, true]);
     expect(await statusOf("G3")).toEqual([503, true]);
+  });
+});
+
+describe("fetchIssuerAssetCodes", () => {
+  const url = "https://h.test/assets?asset_issuer=GISS&limit=200&order=asc";
+
+  it("returns the issuer's codes, sorted and without duplicates", async () => {
+    const records = [{ asset_code: "USDX" }, { asset_code: "EURX" }, { asset_code: "USDX" }];
+    const f = fake({ [url]: { body: JSON.stringify({ _embedded: { records } }) } });
+    expect(await fetchIssuerAssetCodes("https://h.test/", "GISS", f)).toEqual(["EURX", "USDX"]);
+  });
+
+  it("throws a HorizonError on failure", async () => {
+    const f = fake({ [url]: { status: 429, body: "" } });
+    await expect(fetchIssuerAssetCodes("https://h.test", "GISS", f)).rejects.toBeInstanceOf(
+      HorizonError,
+    );
   });
 });
 

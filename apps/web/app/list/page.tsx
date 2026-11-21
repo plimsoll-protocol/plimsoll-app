@@ -1,11 +1,12 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { StrKey } from "@stellar/stellar-sdk";
-import { sacAddress } from "@plimsoll/sdk";
+import { fetchIssuerAssetCodes, sacAddress } from "@plimsoll/sdk";
 import { config, explorer } from "@/lib/config";
-import { contracts } from "@/lib/data";
+import { contracts, loadAssets } from "@/lib/data";
+import { unissuedWarning } from "@/lib/watch";
 import { connectWallet, signXdr } from "@/lib/wallet";
 
 type Step =
@@ -20,7 +21,41 @@ export default function ListPage() {
   const [issuer, setIssuer] = useState("");
   const [step, setStep] = useState<Step>({ kind: "idle" });
 
-  const valid = /^[a-zA-Z0-9]{1,12}$/.test(code) && StrKey.isValidEd25519PublicKey(issuer);
+  const issuerValid = StrKey.isValidEd25519PublicKey(issuer);
+  // null: not looked up, or Horizon failed (free text, no warning).
+  const [issuerCodes, setIssuerCodes] = useState<string[] | null>(null);
+  const [lookingUp, setLookingUp] = useState(false);
+  const [listedCodes, setListedCodes] = useState<Set<string>>(new Set());
+
+  useEffect(() => {
+    setIssuerCodes(null);
+    if (!issuerValid || !config.network.horizonUrl) return;
+    let cancelled = false;
+    setLookingUp(true);
+    Promise.all([
+      fetchIssuerAssetCodes(config.network.horizonUrl, issuer),
+      loadAssets().catch(() => []),
+    ])
+      .then(([codes, listed]) => {
+        if (cancelled) return;
+        setIssuerCodes(codes);
+        setListedCodes(new Set(listed.filter((a) => a.issuer === issuer).map((a) => a.code)));
+      })
+      .catch(() => {
+        // Horizon is down or rate limiting: keep the plain free-text behaviour.
+        if (!cancelled) setIssuerCodes(null);
+      })
+      .finally(() => {
+        if (!cancelled) setLookingUp(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [issuer, issuerValid]);
+
+  const warning = unissuedWarning(code, issuerCodes);
+
+  const valid = /^[a-zA-Z0-9]{1,12}$/.test(code) && issuerValid;
   const sac = valid ? sacAddress(code, issuer, config.network.networkPassphrase) : "";
 
   const signAndSend = async (prepare: (source: string) => Promise<string>, label: string) => {
@@ -106,6 +141,35 @@ export default function ListPage() {
             required
           />
         </label>
+        {issuerValid && lookingUp ? (
+          <p className="sub">Looking up this issuer&apos;s assets…</p>
+        ) : null}
+        {issuerCodes && issuerCodes.length > 0 ? (
+          <div role="group" aria-label="Assets this issuer has issued">
+            <p className="sub" style={{ margin: "0 0 6px" }}>
+              Assets issued by this account. Pick one to fill in the code.
+            </p>
+            <div className="row">
+              {issuerCodes.map((c) => (
+                <button
+                  key={c}
+                  type="button"
+                  className="secondary"
+                  aria-pressed={c === code}
+                  onClick={() => setCode(c)}
+                >
+                  {c}
+                  {listedCodes.has(c) ? " (already listed)" : ""}
+                </button>
+              ))}
+            </div>
+          </div>
+        ) : null}
+        {warning ? (
+          <p className="notice notice-bad" role="alert">
+            {warning}
+          </p>
+        ) : null}
         {valid ? (
           <p className="sub">
             Asset contract on {config.networkName}: <code className="break">{sac}</code>
@@ -141,6 +205,7 @@ export default function ListPage() {
               This asset has no Stellar Asset Contract on {config.networkName} yet. Deploying it is
               a one-time, permissionless step that does not change the asset.
             </p>
+            {warning ? <p>{warning}</p> : null}
             <button type="button" onClick={deploySac}>
               Deploy asset contract, then list
             </button>

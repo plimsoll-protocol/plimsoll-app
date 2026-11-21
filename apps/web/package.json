@@ -5,7 +5,8 @@
   "license": "Apache-2.0",
   "scripts": {
     "dev": "next dev",
-    "build": "next build",
+    "build": "next build && node scripts/apply-csp.mjs",
+    "test": "vitest run",
     "start": "npx serve out",
     "typecheck": "tsc --noEmit",
     "test": "vitest run"

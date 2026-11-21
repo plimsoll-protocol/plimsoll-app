@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { useEffect, useRef, useState } from "react";
 import { config, explorer } from "@/lib/config";
 import { PlimsollMark } from "./ui";
 
@@ -18,6 +19,29 @@ const DOCS_URL = "https://plimsoll-protocol.gitbook.io/plimsoll-protocol-docs/";
 
 export function Header() {
   const path = usePathname();
+  const [open, setOpen] = useState(false);
+  const button = useRef<HTMLButtonElement>(null);
+  const nav = useRef<HTMLElement>(null);
+
+  // Navigating closes the menu.
+  useEffect(() => {
+    setOpen(false);
+  }, [path]);
+
+  // Escape closes the menu and returns focus to its button; opening moves focus to the first link.
+  useEffect(() => {
+    if (!open) return;
+    nav.current?.querySelector<HTMLElement>("a")?.focus();
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        setOpen(false);
+        button.current?.focus();
+      }
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [open]);
+
   return (
     <header className="site-header">
       <div className="wrap">
@@ -26,7 +50,24 @@ export function Header() {
           Plimsoll
         </Link>
         <span className="net-pill">{config.networkName}</span>
-        <nav className="nav" aria-label="Main">
+        <button
+          ref={button}
+          type="button"
+          className="nav-toggle secondary"
+          aria-expanded={open}
+          aria-controls="site-nav"
+          onClick={() => setOpen((o) => !o)}
+        >
+          {open ? "Close" : "Menu"}
+          <span className="sr-only"> navigation</span>
+        </button>
+        <nav
+          id="site-nav"
+          ref={nav}
+          className="nav"
+          data-open={open ? "true" : "false"}
+          aria-label="Main"
+        >
           {NAV.map((item) => (
             <Link
               key={item.href}
