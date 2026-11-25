@@ -27,7 +27,12 @@ export default function ReportPage() {
 
 function FormSkeleton() {
   return (
-    <div className="mt" aria-busy="true" aria-label="Loading the report form" style={{ maxWidth: 680 }}>
+    <div
+      className="mt"
+      aria-busy="true"
+      aria-label="Loading the report form"
+      style={{ maxWidth: 680 }}
+    >
       <div className="card" style={{ display: "grid", gap: 12 }}>
         <Bar height={24} width="40%" />
         <Bar height={14} width="70%" />

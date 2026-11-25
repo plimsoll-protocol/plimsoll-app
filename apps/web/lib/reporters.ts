@@ -59,8 +59,7 @@ export function sortReporters(
   direction: SortDirection,
 ): IndexerReporter[] {
   const byName = (a: IndexerReporter, b: IndexerReporter) =>
-    a.name.toLowerCase().localeCompare(b.name.toLowerCase()) ||
-    a.address.localeCompare(b.address);
+    a.name.toLowerCase().localeCompare(b.name.toLowerCase()) || a.address.localeCompare(b.address);
   const sign = direction === "asc" ? 1 : -1;
 
   return [...list].sort((a, b) => {
