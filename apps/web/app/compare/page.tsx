@@ -5,12 +5,7 @@ import { useSearchParams } from "next/navigation";
 import { Suspense, useEffect, useMemo, useState } from "react";
 import { bpsToPercent } from "@plimsoll/sdk";
 import { Skeleton } from "@/components/ui";
-import {
-  COMPARE_PAGE_PARAM,
-  MAX_COMPARE,
-  parseSelection,
-  seriesColor,
-} from "@/lib/compare";
+import { COMPARE_PAGE_PARAM, MAX_COMPARE, parseSelection, seriesColor } from "@/lib/compare";
 import { indexer, loadAsset } from "@/lib/data";
 import { filterByRange, parseDateRange, toHistoryRows, type HistoryRow } from "@/lib/history";
 
@@ -93,8 +88,8 @@ function CompareDetail() {
   if (sacs.length === 0) {
     return (
       <p className="notice notice-info">
-        No assets selected. Pick up to {MAX_COMPARE} on the{" "}
-        <Link href="/">dashboard</Link> and choose Compare selected.
+        No assets selected. Pick up to {MAX_COMPARE} on the <Link href="/">dashboard</Link> and
+        choose Compare selected.
       </p>
     );
   }
@@ -102,8 +97,7 @@ function CompareDetail() {
   if (error) {
     return (
       <p className="notice notice-bad" role="alert">
-        Could not load the comparison: {error}{" "}
-        <Link href="/">Back to assets</Link>.
+        Could not load the comparison: {error} <Link href="/">Back to assets</Link>.
       </p>
     );
   }
@@ -137,8 +131,8 @@ function CompareDetail() {
 
       {failed.length > 0 ? (
         <p className="notice notice-warn" role="alert">
-          Could not load history for {failed.length} selected asset{failed.length === 1 ? "" : "s"}
-          ; the chart shows the rest.
+          Could not load history for {failed.length} selected asset{failed.length === 1 ? "" : "s"};
+          the chart shows the rest.
         </p>
       ) : null}
 

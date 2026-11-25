@@ -15,9 +15,7 @@ const contract = (n: number) => StrKey.encodeContract(new Uint8Array(32).fill(n)
 
 describe("parseSelection", () => {
   it("reads a comma separated selection and trims entries", () => {
-    const params = new URLSearchParams(
-      `${COMPARE_PARAM}=${contract(1)},${contract(2)}`,
-    );
+    const params = new URLSearchParams(`${COMPARE_PARAM}=${contract(1)},${contract(2)}`);
     expect(parseSelection(params)).toEqual([contract(1), contract(2)]);
   });
 
