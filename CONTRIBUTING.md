@@ -8,6 +8,9 @@
 
 ## Local setup
 
+See [docs/dev-setup.md](docs/dev-setup.md) for the end-to-end guide covering cloning,
+installing dependencies, setting up `.env.local`, and starting both the indexer (Docker) and the Next.js app.
+
 ```bash
 npm install
 npm run dev
