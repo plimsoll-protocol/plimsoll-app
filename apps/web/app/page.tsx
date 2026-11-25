@@ -1,16 +1,24 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { AssetCard } from "@/components/AssetCard";
 import { Skeleton, nowSecs } from "@/components/ui";
 import { config } from "@/lib/config";
-import { loadAssets, type AssetView } from "@/lib/data";
+import { loadAssets, loadAsset, type AssetView } from "@/lib/data";
+import { clearLastAsset, getLastAsset, attemptRestore } from "@/lib/session";
+
+// Restoration runs once per page lifetime: a reload resets this flag, but
+// client-side navigation back to the homepage does not, so the user is not
+// redirected away from a homepage they explicitly opened.
+let restorationAttempted = false;
 
 export default function Home() {
   const [assets, setAssets] = useState<AssetView[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [now, setNow] = useState(nowSecs());
+  const router = useRouter();
 
   useEffect(() => {
     let cancelled = false;
@@ -28,6 +36,18 @@ export default function Home() {
       cancelled = true;
     };
   }, []);
+
+  useEffect(() => {
+    if (restorationAttempted) return;
+    restorationAttempted = true;
+
+    void attemptRestore({
+      getStored: getLastAsset,
+      clearStored: clearLastAsset,
+      loadAsset,
+      navigate: (sac) => router.push(`/asset/?sac=${sac}`),
+    });
+  }, [router]);
 
   const source = assets?.[0]?.source;
 

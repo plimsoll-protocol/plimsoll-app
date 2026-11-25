@@ -33,6 +33,7 @@ import {
 import { assetFromSearch } from "@/lib/asset-query";
 import { config, explorer } from "@/lib/config";
 import { embedCode } from "@/lib/badge";
+import { setLastAsset } from "@/lib/session";
 import {
   contracts,
   indexer,
@@ -77,6 +78,13 @@ function AssetDetail() {
           .catch((e: unknown) => console.warn("Could not load reporter names", e));
       })
       .catch((e: unknown) => setError(e instanceof Error ? e.message : String(e)));
+  }, [sac]);
+
+  // Remember the last asset opened so the homepage can restore it after a
+  // reload. Every navigation path that opens an asset passes through this
+  // page, so storing here keeps the value consistent.
+  useEffect(() => {
+    if (sac) setLastAsset(sac);
   }, [sac]);
 
   if (!query.ok) {
