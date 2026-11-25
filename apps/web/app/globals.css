@@ -350,6 +350,15 @@ main {
   background: var(--sea-bg);
   color: var(--sea);
 }
+.pill-pending {
+  background: var(--warn-bg);
+  color: var(--warn);
+  margin-top: 4px;
+}
+/* A report signed here and not yet confirmed: legible, but visibly provisional. */
+tr.row-pending td {
+  background: var(--muted-bg);
+}
 
 /* gauge */
 .gauge {
