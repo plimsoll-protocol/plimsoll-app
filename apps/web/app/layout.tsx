@@ -1,5 +1,5 @@
 import type { Metadata, Viewport } from "next";
-import { Footer, Header } from "@/components/SiteChrome";
+import { SiteFrame } from "@/components/SiteFrame";
 import { config } from "@/lib/config";
 import { buildCsp } from "@/lib/csp";
 import { MAINNET_HORIZON } from "@/lib/mainnet";
@@ -35,14 +35,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     <html lang="en">
       <head>{csp ? <meta httpEquiv="Content-Security-Policy" content={csp} /> : null}</head>
       <body>
-        <a href="#main-content" className="skip-link">
-          Skip to main content
-        </a>
-        <Header />
-        <main id="main-content" tabIndex={-1}>
-          <div className="wrap">{children}</div>
-        </main>
-        <Footer />
+        <SiteFrame>{children}</SiteFrame>
       </body>
     </html>
   );

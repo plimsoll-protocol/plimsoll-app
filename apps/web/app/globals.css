@@ -208,6 +208,14 @@ main {
   padding: 32px 0 64px;
   outline: none;
 }
+.widget-main {
+  padding: 0;
+}
+.widget-wrap {
+  max-width: 100%;
+  margin: 0;
+  padding: 0;
+}
 .site-footer {
   border-top: 1px solid var(--line);
   padding: 24px 0 40px;
@@ -549,6 +557,70 @@ button.copy-trigger {
 .notice-warn {
   background: var(--warn-bg);
   color: var(--warn);
+}
+.coverage-widget {
+  display: grid;
+  gap: 10px;
+  padding: 10px;
+}
+.coverage-widget-heading {
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.coverage-widget-heading .eyebrow {
+  margin-bottom: 2px;
+}
+.coverage-widget-heading h1 {
+  margin: 0;
+  font-size: 1.25rem;
+}
+.coverage-widget-refresh {
+  font-size: 0.78rem;
+}
+.coverage-widget-notice {
+  margin: 0;
+  padding: 8px 10px;
+}
+.coverage-widget-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(220px, 100%), 1fr));
+  gap: 8px;
+}
+.coverage-widget-card {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+  padding: 12px;
+  color: inherit;
+  text-decoration: none;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+}
+.coverage-widget-card:hover {
+  border-color: var(--ink-3);
+}
+.coverage-widget-card-head {
+  align-items: center;
+}
+.coverage-widget-code {
+  overflow-wrap: anywhere;
+}
+.coverage-widget-ratio {
+  font-size: 1.5rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+.coverage-widget-address {
+  overflow-wrap: anywhere;
+}
+.coverage-widget-error {
+  color: var(--bad);
+  font-size: 0.82rem;
+  overflow-wrap: anywhere;
 }
 .notice a {
   color: inherit;
