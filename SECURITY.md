@@ -2,7 +2,7 @@
 
 The app and SDK are unaudited and target Stellar testnet.
 
-## Reporting
+## Reporting 
 
 Report privately via
 [Security → Report a vulnerability](https://github.com/plimsoll-protocol/plimsoll-app/security/advisories/new).
