@@ -21,6 +21,7 @@ import {
 } from "@plimsoll/sdk";
 import {
   CopyButton,
+  DisputeConfirmModal,
   Gauge,
   Skeleton,
   Stat,
@@ -29,10 +30,12 @@ import {
   nowSecs,
   ratioText,
   statusOf,
+  type DisputedReportDetails,
 } from "@/components/ui";
 import { assetFromSearch } from "@/lib/asset-query";
 import { config, explorer } from "@/lib/config";
 import { embedCode } from "@/lib/badge";
+import { connectWallet, signXdr } from "@/lib/wallet";
 import {
   contracts,
   indexer,
@@ -58,6 +61,32 @@ function AssetDetail() {
   const [error, setError] = useState<string | null>(null);
   const [now, setNow] = useState(nowSecs());
   const [names, setNames] = useState<ReadonlyMap<string, string>>(new Map());
+  const [disputeReport, setDisputeReport] = useState<DisputedReportDetails | null>(null);
+  const [disputeSubmitting, setDisputeSubmitting] = useState(false);
+  const [disputeError, setDisputeError] = useState<string | null>(null);
+  const [disputeNotice, setDisputeNotice] = useState<string | null>(null);
+
+  const handleConfirmDispute = async () => {
+    if (!disputeReport) return;
+    setDisputeSubmitting(true);
+    setDisputeError(null);
+    try {
+      const source = await connectWallet();
+      const xdr = await contracts.prepareDisputeReport(
+        source,
+        disputeReport.sac ?? asset?.sac ?? sac,
+        disputeReport.tier ?? Tier.Transcribed,
+      );
+      const signed = await signXdr(xdr, source);
+      await contracts.submit(signed);
+      setDisputeNotice("Dispute submitted successfully.");
+      setDisputeReport(null);
+    } catch (err) {
+      setDisputeError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setDisputeSubmitting(false);
+    }
+  };
 
   useEffect(() => {
     if (!sac) return;
@@ -228,6 +257,7 @@ function AssetDetail() {
               <th>As of</th>
               <th>Signed by</th>
               <th>Document</th>
+              <th>Action</th>
             </tr>
           </thead>
           <tbody>
@@ -241,11 +271,24 @@ function AssetDetail() {
                   issuer={asset.issuer}
                   now={now}
                   name={names.get(r.reporter)}
+                  onDispute={(rep, bps) => {
+                    setDisputeNotice(null);
+                    setDisputeError(null);
+                    setDisputeReport({
+                      reporter: rep.reporter,
+                      reporterName: names.get(rep.reporter),
+                      asOf: rep.asOf,
+                      bps,
+                      tier: rep.tier,
+                      amount: rep.amount,
+                      sac: asset.sac,
+                    });
+                  }}
                 />
               ) : (
                 <tr key={tier}>
                   <td>{tierLabel(tier)}</td>
-                  <td colSpan={5} className="sub">
+                  <td colSpan={7} className="sub">
                     No report at this tier.
                   </td>
                 </tr>
@@ -254,6 +297,26 @@ function AssetDetail() {
           </tbody>
         </table>
       </div>
+
+      {disputeNotice ? (
+        <p className="notice notice-ok mt" role="status">
+          {disputeNotice}
+        </p>
+      ) : null}
+
+      <DisputeConfirmModal
+        isOpen={disputeReport !== null}
+        report={disputeReport}
+        onConfirm={handleConfirmDispute}
+        onCancel={() => {
+          if (!disputeSubmitting) {
+            setDisputeReport(null);
+            setDisputeError(null);
+          }
+        }}
+        submitting={disputeSubmitting}
+        error={disputeError}
+      />
 
       {asset.supply ? (
         <SupplySection
@@ -295,15 +358,18 @@ function ReportRow({
   issuer,
   now,
   name,
+  onDispute,
 }: {
   report: ReportView;
   supply: bigint | undefined;
   issuer: string;
   now: number;
   name?: string;
+  onDispute?: (report: ReportView, bps: number) => void;
 }) {
+  const bps = supply && supply > 0n ? Number((report.amount * 10_000n) / supply) : 0;
   const covers =
-    supply && supply > 0n ? bpsToPercent(Number((report.amount * 10_000n) / supply)) : "—";
+    supply && supply > 0n ? bpsToPercent(bps) : "—";
   return (
     <tr>
       <td>
@@ -354,6 +420,17 @@ function ReportRow({
             Not a web link, so it is shown as text and not checked here.
           </span>
         )}
+      </td>
+      <td>
+        <button
+          type="button"
+          className="secondary"
+          style={{ padding: "2px 8px", fontSize: "0.8rem" }}
+          onClick={() => onDispute?.(report, bps)}
+          title="Dispute this reserve report"
+        >
+          Dispute
+        </button>
       </td>
     </tr>
   );
