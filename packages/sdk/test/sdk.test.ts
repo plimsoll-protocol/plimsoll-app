@@ -217,6 +217,9 @@ describe.skipIf(!process.env.PLIMSOLL_LIVE)(
       expect(cov!.bps).toBeGreaterThan(0);
       const report = await live(ctx, () => client.getReport(pusd, Tier.IssuerSigned));
       expect(report?.reporter).toBe(TESTNET.assets.PUSD!.issuer);
+    });
+
+    it("passes the PUSD is_covered smoke check", async (ctx) => {
       const covered = await live(ctx, () =>
         client.isCovered(pusd, 0, 10 * 365 * 86_400, Tier.Transcribed),
       );

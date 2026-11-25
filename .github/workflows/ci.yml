@@ -4,15 +4,15 @@ name: CI
 # - test: offline checks and unit tests. Runs on every pull request and is the
 #   required check, so it never depends on testnet being up.
 # - live: the same SDK tests with PLIMSOLL_LIVE=1, reading the real testnet
-#   deployment. Runs on main, nightly and on demand, never on pull requests. A
-#   failure on main or on the nightly run opens (or comments on) an issue.
+#   deployment. Runs on main, weekly and on demand, never on pull requests. A
+#   failure on main or the weekly run opens (or comments on) an issue.
 
 on:
   push:
     branches: [main]
   pull_request:
   schedule:
-    - cron: "17 4 * * *"
+    - cron: "0 9 * * 1"
   workflow_dispatch:
 
 permissions:
