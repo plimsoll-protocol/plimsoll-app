@@ -40,6 +40,7 @@ formatUnits(cov!.reserves);    // "1,020,000"
 | `preparePostReserve({ reporter, sac, amount, asOf, docHash, docUri })` | unsigned XDR |
 | `prepareSetReporter(admin, reporter, role, name)` | unsigned XDR; `name` must be 1–64 UTF-8 bytes |
 | `prepareRevoke(admin, reporter)` | unsigned XDR |
+| `estimateFee(operation)` | resource fee in stroops via simulation, or `0` on error |
 | `submit(signedXdr)` | transaction hash, after it succeeds |
 
 A failed simulation throws `ContractCallError`. For contract errors its `code`
