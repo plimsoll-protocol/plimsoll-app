@@ -4,7 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { config, explorer } from "@/lib/config";
-import { PlimsollMark } from "./ui";
+import { PlimsollMark } from "./PlimsollMark";
 
 const NAV = [
   { href: "/", label: "Assets" },
