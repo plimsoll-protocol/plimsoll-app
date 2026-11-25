@@ -412,7 +412,8 @@ export default function ReportPage() {
                     {isEstimatingFee ? "Estimating…" : `${estimatedFee ?? 0} stroops`}
                   </div>
                   <div className="sub" style={{ fontSize: "0.8rem", marginTop: 2 }}>
-                    Calculated via Soroban simulation. Network base fee (100 stroops) applies at submission.
+                    Calculated via Soroban simulation. Network base fee (100 stroops) applies at
+                    submission.
                   </div>
                 </div>
               </div>
