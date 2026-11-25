@@ -3,7 +3,7 @@
 import { safeHref } from "@/lib/safe-href";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
-import { Suspense, useCallback, useEffect, useState } from "react";
+import { Suspense, useCallback, useEffect, useRef, useState } from "react";
 import {
   Tier,
   ago,
@@ -42,6 +42,8 @@ import {
   type Origin,
   type ReportView,
 } from "@/lib/data";
+import { useAutoRefresh, useRefreshIntervalSetting } from "@/lib/refresh-interval";
+import { RefreshControls } from "@/components/RefreshControls";
 
 export default function AssetPage() {
   return (
@@ -58,26 +60,37 @@ function AssetDetail() {
   const [error, setError] = useState<string | null>(null);
   const [now, setNow] = useState(nowSecs());
   const [names, setNames] = useState<ReadonlyMap<string, string>>(new Map());
+  const [intervalValue, setIntervalValue] = useRefreshIntervalSetting();
+  const cancelRef = useRef<(() => void) | null>(null);
 
-  useEffect(() => {
+  const fetch = useCallback(() => {
     if (!sac) return;
+    if (cancelRef.current) cancelRef.current();
+    let cancelled = false;
+    cancelRef.current = () => {
+      cancelled = true;
+    };
     loadAsset(sac)
       .then((a) => {
+        if (cancelled) return;
         setAsset(a);
         setNow(nowSecs());
+        setError(null);
         if (!a) return;
         const addresses = Object.values(a.reports)
           .filter((r): r is ReportView => r !== undefined)
           .map((r) => r.reporter);
         if (a.supply) addresses.push(a.supply.poster);
-        // Names are an improvement on the addresses already shown, not a
-        // precondition for them, so a failed lookup leaves the page as it is.
         loadReporterNames(addresses)
           .then(setNames)
           .catch((e: unknown) => console.warn("Could not load reporter names", e));
       })
-      .catch((e: unknown) => setError(e instanceof Error ? e.message : String(e)));
+      .catch((e: unknown) => {
+        if (!cancelled) setError(e instanceof Error ? e.message : String(e));
+      });
   }, [sac]);
+
+  const { refresh } = useAutoRefresh(fetch, intervalValue, sac);
 
   if (!query.ok) {
     return (
@@ -151,9 +164,16 @@ function AssetDetail() {
             {asset.toml?.org_name ? <> · {asset.toml.org_name}</> : null}
           </div>
         </div>
-        <div className="row">
-          <StatusPill status={status} />
-          {c ? <TierPill tier={c.tier} /> : null}
+        <div className="row" style={{ gap: 12, alignItems: "flex-start", flexWrap: "wrap" }}>
+          <RefreshControls
+            interval={intervalValue}
+            onChange={setIntervalValue}
+            onRefresh={refresh}
+          />
+          <div className="row">
+            <StatusPill status={status} />
+            {c ? <TierPill tier={c.tier} /> : null}
+          </div>
         </div>
       </div>
 

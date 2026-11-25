@@ -5,6 +5,8 @@ import { FormEvent, useEffect, useState } from "react";
 import { IndexerError } from "@plimsoll/sdk";
 import type { IndexerWebhook } from "@plimsoll/sdk";
 import { indexer, loadAssets, type AssetView } from "@/lib/data";
+import { RefreshControls } from "@/components/RefreshControls";
+import { useRefreshIntervalSetting } from "@/lib/refresh-interval";
 
 const INDEXER_WEBHOOK_DOCS =
   "https://plimsoll-protocol.gitbook.io/plimsoll-protocol-docs/indexer/webhooks";
@@ -49,6 +51,7 @@ export default function SettingsPage() {
   const [thresholdError, setThresholdError] = useState<string | null>(null);
   const [submitState, setSubmitState] = useState<SubmitState>({ kind: "idle" });
   const [webhooks, setWebhooks] = useState<IndexerWebhook[] | null>(null);
+  const [intervalValue, setIntervalValue] = useRefreshIntervalSetting();
 
   const indexerAvailable = indexer !== null;
 
@@ -259,6 +262,23 @@ export default function SettingsPage() {
           No webhooks registered yet.
         </p>
       ) : null}
+
+      <h2>Live data refresh</h2>
+      <p className="sub" style={{ maxWidth: 640 }}>
+        How often the asset, reporter and home pages re-fetch live data automatically. The setting
+        is stored in your browser, so it survives reloads, and applies immediately without one.
+      </p>
+      <div className="mt" style={{ maxWidth: 640 }}>
+        <RefreshControls
+          interval={intervalValue}
+          onChange={setIntervalValue}
+          onRefresh={() => {}}
+        />
+      </div>
+      <p className="sub" style={{ marginTop: 12 }}>
+        Off disables automatic refresh entirely; the Refresh button on each page still fetches on
+        demand.
+      </p>
 
       <p className="sub" style={{ marginTop: 24 }}>
         <Link href="/">Back to assets</Link>

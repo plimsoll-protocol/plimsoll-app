@@ -1,41 +1,58 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import { ago, shortAddress, type IndexerReporter } from "@plimsoll/sdk";
 import { Skeleton, nowSecs } from "@/components/ui";
 import { config, explorer } from "@/lib/config";
 import { indexer, loadReporters } from "@/lib/data";
 import { groupReporters, updatedAt } from "@/lib/reporters";
+import { useAutoRefresh, useRefreshIntervalSetting } from "@/lib/refresh-interval";
+import { RefreshControls } from "@/components/RefreshControls";
 
 export default function ReportersPage() {
   const [reporters, setReporters] = useState<IndexerReporter[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [now, setNow] = useState(nowSecs());
   const noIndexer = indexer === null;
+  const [intervalValue, setIntervalValue] = useRefreshIntervalSetting();
+  const cancelRef = useRef<(() => void) | null>(null);
 
-  useEffect(() => {
+  const fetch = useCallback(() => {
+    if (cancelRef.current) cancelRef.current();
     let cancelled = false;
+    cancelRef.current = () => {
+      cancelled = true;
+    };
     loadReporters()
       .then((list) => {
         if (cancelled) return;
         setReporters(list);
         setNow(nowSecs());
+        setError(null);
       })
       .catch((err: unknown) => {
         if (!cancelled) setError(err instanceof Error ? err.message : String(err));
       });
-    return () => {
-      cancelled = true;
-    };
   }, []);
+
+  const { refresh } = useAutoRefresh(fetch, intervalValue);
 
   const groups = reporters ? groupReporters(reporters).filter((g) => g.reporters.length > 0) : [];
 
   return (
     <>
-      <div className="eyebrow">Reporter registry</div>
-      <h1>Reporters</h1>
+      <div className="spread">
+        <div>
+          <div className="eyebrow">Reporter registry</div>
+          <h1 style={{ margin: 0 }}>Reporters</h1>
+        </div>
+        <RefreshControls
+          interval={intervalValue}
+          onChange={setIntervalValue}
+          onRefresh={refresh}
+        />
+      </div>
       <p className="sub" style={{ maxWidth: 680 }}>
         Reserve figures carry the weight of whoever signed them. These are the auditors,
         transcribers and supply posters registered on {config.networkName}, and when each was last
