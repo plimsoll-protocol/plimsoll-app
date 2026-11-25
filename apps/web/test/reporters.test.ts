@@ -5,6 +5,9 @@ import {
   ROLE_HEADINGS,
   groupReporters,
   isReporterRole,
+  reputationOf,
+  reputationText,
+  sortReporters,
   updatedAt,
 } from "../lib/reporters";
 
@@ -45,6 +48,64 @@ describe("groupReporters", () => {
       reporter({ address: "GY" }),
     ]);
     expect(groups.flatMap((g) => g.reporters).map((r) => r.address)).toEqual(["GY"]);
+  });
+});
+
+describe("sortReporters", () => {
+  const listed = () => [
+    reporter({ address: "GA", name: "Alice", reputation: 40 }),
+    reporter({ address: "GB", name: "Bob", reputation: 90 }),
+    reporter({ address: "GC", name: "Cara" }),
+    reporter({ address: "GD", name: "Dan", reputation: 40 }),
+  ];
+
+  it("sorts reputation high to low, with unscored reporters last", () => {
+    const out = sortReporters(listed(), "reputation", "desc");
+    expect(out.map((r) => r.address)).toEqual(["GB", "GA", "GD", "GC"]);
+  });
+
+  it("sorts reputation low to high, still keeping unscored reporters last", () => {
+    const out = sortReporters(listed(), "reputation", "asc");
+    expect(out.map((r) => r.address)).toEqual(["GA", "GD", "GB", "GC"]);
+  });
+
+  it("treats a non-numeric score as unavailable", () => {
+    const out = sortReporters(
+      [
+        reporter({ address: "GA", name: "Alice", reputation: Number.NaN }),
+        reporter({ address: "GB", name: "Bob", reputation: 5 }),
+      ],
+      "reputation",
+      "desc",
+    );
+    expect(out.map((r) => r.address)).toEqual(["GB", "GA"]);
+  });
+
+  it("sorts names in either direction without changing the input", () => {
+    const input = listed();
+    expect(sortReporters(input, "name", "asc").map((r) => r.name)).toEqual([
+      "Alice",
+      "Bob",
+      "Cara",
+      "Dan",
+    ]);
+    expect(sortReporters(input, "name", "desc").map((r) => r.name)).toEqual([
+      "Dan",
+      "Cara",
+      "Bob",
+      "Alice",
+    ]);
+    expect(input.map((r) => r.name)).toEqual(["Alice", "Bob", "Cara", "Dan"]);
+  });
+});
+
+describe("reputation display", () => {
+  it("reads a finite score and marks a missing one as unknown", () => {
+    expect(reputationOf(reporter({ reputation: 0 }))).toBe(0);
+    expect(reputationOf(reporter())).toBeNull();
+    expect(reputationOf(reporter({ reputation: Number.POSITIVE_INFINITY }))).toBeNull();
+    expect(reputationText(reporter({ reputation: 12 }))).toBe("12");
+    expect(reputationText(reporter())).toBe("—");
   });
 });
 

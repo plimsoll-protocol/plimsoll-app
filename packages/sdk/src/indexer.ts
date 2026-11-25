@@ -80,6 +80,12 @@ export interface IndexerReporter {
   role: "auditor" | "transcriber" | "supply_poster";
   name: string;
   updated_at: string;
+  /**
+   * The reporter's on-chain reputation score, when the indexer has read one
+   * from the registry. Optional: an indexer that has not indexed it yet, or a
+   * registry build without it, omits the field.
+   */
+  reputation?: number;
 }
 
 export interface IndexerNetwork {

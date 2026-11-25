@@ -65,7 +65,7 @@ report. `coverage.bps` is `null` when supply is zero.
 | `GET /v1/assets` | `{"assets":[…]}`, same shape as above |
 | `GET /v1/assets/{sac}/supply?limit=100` | `{"supply":[…]}`, newest first |
 | `GET /v1/assets/{sac}/reports?limit=100` | `{"reports":[…]}`, newest first |
-| `GET /v1/reporters` | `{"reporters":[{"address","role","name","updated_at"}]}` |
+| `GET /v1/reporters` | `{"reporters":[{"address","role","name","updated_at","reputation"}]}`; `reputation` is optional when no score is available |
 | `GET /v1/breakdowns/{hash}` | The exact bytes that were hashed |
 
 ## Verifying a breakdown
