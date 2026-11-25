@@ -1,11 +1,12 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { AssetCard } from "@/components/AssetCard";
 import { Skeleton, nowSecs } from "@/components/ui";
 import { config } from "@/lib/config";
 import { loadAssets, type AssetView } from "@/lib/data";
+import { usePrefetchAssets } from "@/lib/prefetch";
 
 export default function Home() {
   const [assets, setAssets] = useState<AssetView[] | null>(null);
@@ -28,6 +29,10 @@ export default function Home() {
       cancelled = true;
     };
   }, []);
+
+  // Stable array reference: only recomputed when the assets list changes.
+  const topSacs = useMemo(() => assets?.map((a) => a.sac) ?? [], [assets]);
+  usePrefetchAssets(topSacs);
 
   const source = assets?.[0]?.source;
 
