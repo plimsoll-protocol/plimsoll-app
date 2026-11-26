@@ -8,6 +8,7 @@ import { config, explorer } from "@/lib/config";
 import { handleGlobalShortcut } from "@/lib/keyboard-shortcuts";
 import { toggleTheme } from "@/lib/theme";
 import { ShortcutDialog } from "./ShortcutDialog";
+import { ThemeToggle } from "./ThemeToggle";
 import { PlimsollMark } from "./ui";
 
 const NAV = [
@@ -155,6 +156,20 @@ export function Header() {
           {open ? "Close" : "Menu"}
           <span className="sr-only"> navigation</span>
         </button>
+        <div className="header-actions">
+          <ThemeToggle />
+          <button
+            ref={button}
+            type="button"
+            className="nav-toggle secondary"
+            aria-expanded={open}
+            aria-controls="site-nav"
+            onClick={() => setOpen((o) => !o)}
+          >
+            {open ? "Close" : "Menu"}
+            <span className="sr-only"> navigation</span>
+          </button>
+        </div>
         <nav
           id="site-nav"
           ref={nav}

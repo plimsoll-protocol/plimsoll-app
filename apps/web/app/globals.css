@@ -32,6 +32,28 @@
   color-scheme: light;
 }
 
+:root[data-theme="dark"],
+:root.dark {
+  --paper: #0d1620;
+  --surface: #142230;
+  --ink: #e8edf2;
+  --ink-2: #b4c0cc;
+  --ink-3: #8696a6;
+  --line: #243546;
+  --brand: #e8edf2;
+  --mark: #ef6a4f;
+  --ok: #5fd39a;
+  --ok-bg: #12382a;
+  --warn: #f0a46c;
+  --warn-bg: #3d2614;
+  --bad: #ff8a80;
+  --bad-bg: #3f1915;
+  --muted-bg: #1b2b3b;
+  --sea: #8cc4ef;
+  --sea-bg: #142f45;
+  color-scheme: dark;
+}
+
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]):not([data-theme="dark"]) {
     --paper: #0d1620;
@@ -177,9 +199,51 @@ p {
   color: var(--ink);
   text-decoration: underline;
 }
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
 .nav-toggle {
   display: none;
   margin-left: auto;
+}
+.theme-toggle {
+  display: inline-flex;
+  align-items: center;
+  background: var(--muted-bg);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 2px;
+  gap: 2px;
+}
+.theme-option {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  border: 0;
+  background: transparent;
+  color: var(--ink-2);
+  padding: 4px 8px;
+  border-radius: 999px;
+  font-size: 0.78rem;
+  font-weight: 600;
+  cursor: pointer;
+  line-height: 1;
+  transition: background-color 0.15s, color 0.15s;
+}
+.theme-option:hover {
+  color: var(--ink);
+}
+.theme-option.active,
+.theme-option[aria-checked="true"] {
+  background: var(--surface);
+  color: var(--ink);
+  box-shadow: 0 1px 2px rgb(0 0 0 / 10%);
+}
+.theme-option:focus-visible {
+  outline: 2px solid var(--sea);
+  outline-offset: 2px;
 }
 .sr-only {
   position: absolute;
@@ -277,9 +341,14 @@ kbd {
   }
   .site-search input {
     width: min(100%, 320px);
+  .header-actions {
+    margin-left: auto;
+    order: 1;
+    gap: 8px;
   }
   .nav-toggle {
     display: inline-flex;
+    margin-left: 0;
   }
   .nav {
     display: none;
@@ -288,12 +357,19 @@ kbd {
     flex: 1 0 100%;
     margin-left: 0;
     padding-bottom: 10px;
+    order: 2;
   }
   .nav[data-open="true"] {
     display: flex;
   }
   .nav a {
     padding: 10px 0;
+  }
+  .theme-toggle .theme-label {
+    display: none;
+  }
+  .theme-option {
+    padding: 5px 6px;
   }
 }
 .net-pill {
@@ -1012,6 +1088,8 @@ pre {
   font-size: 0.85rem;
   line-height: 1.5;
 }
+:root[data-theme="dark"] pre,
+:root.dark pre,
 :root:not([data-theme="light"]) pre {
   border: 1px solid var(--line);
 }

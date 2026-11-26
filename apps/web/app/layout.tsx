@@ -1,9 +1,12 @@
 import type { Metadata, Viewport } from "next";
 import { SiteFrame } from "@/components/SiteFrame";
+import { Footer, Header } from "@/components/SiteChrome";
+import { ThemeProvider } from "@/components/ThemeProvider";
 import { config } from "@/lib/config";
 import { buildCsp } from "@/lib/csp";
 import { MAINNET_HORIZON } from "@/lib/mainnet";
 import { siteMetadata } from "@/lib/metadata";
+import { THEME_SCRIPT } from "@/lib/theme";
 import "./globals.css";
 
 export const metadata: Metadata = siteMetadata();
@@ -32,10 +35,23 @@ const csp =
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en">
-      <head>{csp ? <meta httpEquiv="Content-Security-Policy" content={csp} /> : null}</head>
+    <html lang="en" suppressHydrationWarning>
+      <head>
+        <script dangerouslySetInnerHTML={{ __html: THEME_SCRIPT }} />
+        {csp ? <meta httpEquiv="Content-Security-Policy" content={csp} /> : null}
+      </head>
       <body>
         <SiteFrame>{children}</SiteFrame>
+        <ThemeProvider>
+          <a href="#main-content" className="skip-link">
+            Skip to main content
+          </a>
+          <Header />
+          <main id="main-content" tabIndex={-1}>
+            <div className="wrap">{children}</div>
+          </main>
+          <Footer />
+        </ThemeProvider>
       </body>
     </html>
   );
