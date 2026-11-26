@@ -9,9 +9,13 @@ import { useEffect, useRef, useState } from "react";
 import { ago, shortAddress, type IndexerReporter } from "@plimsoll/sdk";
 import { Breadcrumb } from "@/components/Breadcrumb";
 import { Skeleton, nowSecs } from "@/components/ui";
-import { config, explorer } from "@/lib/config";
+import { EXTERNAL_REL, config, explorer } from "@/lib/config";
 import { indexer, loadReporters } from "@/lib/data";
 <<<<<<< HEAD
+<<<<<<< HEAD
+=======
+import { reporterHref } from "@/lib/reporter-profile";
+>>>>>>> pr-174
 import { groupReporters, updatedAt } from "@/lib/reporters";
 import { useAutoRefresh, useRefreshIntervalSetting } from "@/lib/refresh-interval";
 import { RefreshControls } from "@/components/RefreshControls";
@@ -384,7 +388,59 @@ export default function ReportersPage() {
             <span className="sub">{group.reporters.length} registered</span>
           </div>
           <p className="sub">{group.description}</p>
+<<<<<<< HEAD
           <ReporterTable group={group} now={now} />
+=======
+          <div className="table-wrap">
+            <table>
+              <caption className="sr-only">
+                Registered {group.heading.toLowerCase()}, with their Stellar account and the last
+                update to their entry
+              </caption>
+              <thead>
+                <tr>
+                  <th scope="col">Name</th>
+                  <th scope="col">Address</th>
+                  <th scope="col">Last update</th>
+                </tr>
+              </thead>
+              <tbody>
+                {group.reporters.map((reporter) => {
+                  const at = updatedAt(reporter.updated_at);
+                  return (
+                    <tr key={reporter.address}>
+                      <td>
+                        <Link href={reporterHref(reporter.address)}>
+                          {reporter.name || shortAddress(reporter.address, 6)}
+                        </Link>
+                      </td>
+                      <td>
+                        <a
+                          className="mono"
+                          href={explorer.account(reporter.address)}
+                          target="_blank"
+                          rel={EXTERNAL_REL}
+                          title={`${reporter.address} on Stellar Expert`}
+                        >
+                          {shortAddress(reporter.address, 8)}
+                        </a>
+                      </td>
+                      <td className="num">
+                        {at ? (
+                          <time dateTime={at.iso} title={new Date(at.epoch * 1000).toUTCString()}>
+                            {ago(now - at.epoch)}
+                          </time>
+                        ) : (
+                          "—"
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+>>>>>>> pr-174
         </section>
       ))}
     </>

@@ -42,6 +42,8 @@ import { assetFromSearch } from "@/lib/asset-query";
 import { AssetTitleManager, formatAssetTitle } from "@/lib/asset-title";
 import { config, explorer } from "@/lib/config";
 import { connectWallet, connectedWalletAddress, signXdr } from "@/lib/wallet";
+import { reporterHref } from "@/lib/reporter-profile";
+import { EXTERNAL_REL, config, explorer } from "@/lib/config";
 import { embedCode } from "@/lib/badge";
 import { RECONCILE_DOCS, reconcileSummary, reconcileTime } from "@/lib/reconcile";
 import { connectWallet, signXdr } from "@/lib/wallet";
@@ -484,8 +486,8 @@ function AssetContent({ query }: { query: ReturnType<typeof assetFromSearch> }) 
             </>
           }
           sub={
-            <a href={explorer.contract(asset.sac)} target="_blank" rel="noreferrer">
-              explorer
+            <a href={explorer.contract(asset.sac)} target="_blank" rel={EXTERNAL_REL}>
+              View on Stellar Expert
             </a>
           }
         />
@@ -782,12 +784,16 @@ function ReportRow({
             underneath, so the claim stays checkable against the ledger. An
             issuer signs with its own account and is not a registered reporter,
             so it has no name here and keeps the note it always had. */}
-        {name ? <div>{name}</div> : null}
+        {name ? (
+          <div>
+            <Link href={reporterHref(report.reporter)}>{name}</Link>
+          </div>
+        ) : null}
         <a
           className={name ? "mono sub" : "mono"}
           href={explorer.account(report.reporter)}
           target="_blank"
-          rel="noreferrer"
+          rel={EXTERNAL_REL}
         >
           {shortAddress(report.reporter)}
         </a>{" "}

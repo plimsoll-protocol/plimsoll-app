@@ -253,3 +253,48 @@ describe("IndexerClient batchCoverageStatus", () => {
     expect(laxResult.get("CAAA")).toBe("covered");
   });
 });
+
+describe("IndexerClient.reporterReports", () => {
+  const REPORT = {
+    sac: "CA",
+    tier: "auditor_signed",
+    amount: "100",
+    as_of: "2026-01-01T00:00:00Z",
+    posted_at: "2026-01-02T00:00:00Z",
+    reporter: "GA",
+    doc_hash: "00",
+    doc_uri: "https://example.com/r.pdf",
+    tx_hash: "ab",
+  };
+
+  it("calls the reporter reports endpoint and maps next_before", async () => {
+    const f = vi.fn(async () => json({ reports: [REPORT], next_before: 41 }));
+    const c = new IndexerClient("http://x", f as unknown as typeof fetch);
+    await expect(c.reporterReports("GA")).resolves.toEqual({ reports: [REPORT], nextBefore: 41 });
+    expect((f.mock.calls[0] as unknown[])[0]).toBe("http://x/v1/reporters/GA/reports");
+  });
+
+  it("sends limit, before and asset as query parameters", async () => {
+    const f = vi.fn(async () => json({ reports: [] }));
+    const c = new IndexerClient("http://x", f as unknown as typeof fetch);
+    await c.reporterReports("G A", { limit: 50, before: 90, asset: "CB" });
+    expect((f.mock.calls[0] as unknown[])[0]).toBe(
+      "http://x/v1/reporters/G%20A/reports?limit=50&before=90&asset=CB",
+    );
+  });
+
+  it("reports the last page as nextBefore null", async () => {
+    const f = vi.fn(async () => json({ reports: [], next_before: null }));
+    const c = new IndexerClient("http://x", f as unknown as typeof fetch);
+    await expect(c.reporterReports("GA")).resolves.toEqual({ reports: [], nextBefore: null });
+  });
+
+  it("throws IndexerError on a 404", async () => {
+    const f = async () => json({ error: "not found" }, 404);
+    const c = new IndexerClient("http://x", f as unknown as typeof fetch);
+    await expect(c.reporterReports("GA")).rejects.toMatchObject({
+      name: "IndexerError",
+      status: 404,
+    });
+  });
+});

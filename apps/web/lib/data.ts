@@ -1,5 +1,6 @@
 import {
   IndexerClient,
+  IndexerError,
   PlimsollContracts,
   Tier,
   tierFromName,
@@ -20,6 +21,13 @@ export interface IndexerStatus {
   lastEventAgeSeconds?: number;
 }
 import { logger } from "./logger";
+import {
+  REPORTS_PAGE_LIMIT,
+  collectReporterReports,
+  latestReportsBy,
+  summariseReporterAssets,
+  type ReporterAsset,
+} from "./reporter-profile";
 
 /**
  * How a figure reached us. Not the same as AssetView.source, which says which
@@ -236,6 +244,49 @@ export async function loadIndexerStatus(
       state: "unreachable",
     };
   }
+export interface ReporterAssets {
+  assets: ReporterAsset[];
+  /**
+   * "history": every report, from the indexer's reporter reports endpoint.
+   * "latest": that endpoint is not served by this indexer, so only the
+   * reporter's current latest report per tier on each asset was seen.
+   */
+  basis: "history" | "latest";
+  /** False when the history walk stopped before the oldest report. */
+  complete: boolean;
+}
+
+/**
+ * Every asset a reporter has posted at least one report on, with the asset's
+ * latest coverage. Null when no indexer is configured: the contracts keep only
+ * the latest report per tier, keyed by asset, so the chain cannot answer which
+ * assets an address has reported on.
+ */
+export async function loadReporterAssets(address: string): Promise<ReporterAssets | null> {
+  if (!indexer) return null;
+  const client = indexer;
+  const [assets, history] = await Promise.all([
+    client.listAssets(),
+    collectReporterReports((before) =>
+      client.reporterReports(address, { limit: REPORTS_PAGE_LIMIT, before }),
+    ).catch((err: unknown) => {
+      // An indexer older than the endpoint answers 404 for the route itself.
+      if (err instanceof IndexerError && err.status === 404) return null;
+      throw err;
+    }),
+  ]);
+  if (history) {
+    return {
+      assets: summariseReporterAssets(history.reports, assets),
+      basis: "history",
+      complete: history.complete,
+    };
+  }
+  return {
+    assets: summariseReporterAssets(latestReportsBy(address, assets), assets),
+    basis: "latest",
+    complete: true,
+  };
 }
 
 /** All assets: from the indexer when configured, otherwise from the chain. */

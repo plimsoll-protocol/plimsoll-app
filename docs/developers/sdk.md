@@ -118,6 +118,7 @@ const revokeXdr = await plimsoll.prepareRevoke(admin, reporter);
 | `supplyHistory(sac, limit?)` | `GET /v1/assets/{sac}/supply` |
 | `reportHistory(sac, limit?)` | `GET /v1/assets/{sac}/reports` |
 | `reporters()` | `GET /v1/reporters` |
+| `reporterReports(address, { limit?, before?, asset? })` | `GET /v1/reporters/{address}/reports`, paged with `nextBefore` |
 | `network()` | `GET /v1/network` |
 | `breakdown(hash)` | `GET /v1/breakdowns/{hash}` (raw bytes) |
 

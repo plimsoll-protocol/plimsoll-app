@@ -16,6 +16,7 @@ export const PUBLIC_ROUTES = [
   "/list/",
   "/mainnet/",
   "/report/",
+  "/reporter/",
   "/reporters/",
   "/settings/",
 ] as const;

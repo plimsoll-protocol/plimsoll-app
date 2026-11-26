@@ -25,6 +25,9 @@ format of [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   Stellar Asset Contract's `name()` on a ledger deployed without it.
 - `AssetMeta` type and the `decodeAssetMeta`, `parseSacName` and
   `isMissingFunctionError` helpers.
+- `IndexerClient.reporterReports(address, query?)` for
+  `GET /v1/reporters/{address}/reports`, with `before`/`nextBefore` paging and
+  an `asset` filter.
 
 ## [0.1.0] - 2026-11-24
 
