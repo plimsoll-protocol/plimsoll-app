@@ -225,7 +225,8 @@ export default function ReportersPage() {
       ) : null}
 
       {!noIndexer && !error && reporters === null ? (
-        <div className="mt" aria-busy="true" aria-label="Loading reporters">
+        <div className="mt" role="status" aria-busy="true">
+          <span className="sr-only">Loading reporters</span>
           {[0, 1].map((i) => (
             <div className="card" key={i} style={{ display: "grid", gap: 12, marginTop: 16 }}>
               <Skeleton height={24} width="30%" />
