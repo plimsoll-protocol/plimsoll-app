@@ -406,6 +406,33 @@ main {
   gap: 20px;
   flex-wrap: wrap;
   justify-content: space-between;
+  align-items: center;
+}
+.indexer-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.85rem;
+  color: var(--ink-2);
+}
+.status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  display: inline-block;
+  flex-shrink: 0;
+}
+.status-dot-ok {
+  background: var(--ok);
+  box-shadow: 0 0 0 2px var(--ok-bg);
+}
+.status-dot-lagging {
+  background: var(--warn);
+  box-shadow: 0 0 0 2px var(--warn-bg);
+}
+.status-dot-unreachable {
+  background: var(--bad);
+  box-shadow: 0 0 0 2px var(--bad-bg);
 }
 
 /* hero */

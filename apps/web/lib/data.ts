@@ -4,12 +4,21 @@ import {
   Tier,
   tierFromName,
   type IndexerAsset,
+  type IndexerHealth,
   type IndexerReporter,
   type IndexerSource,
   type IndexerToml,
 } from "@plimsoll/sdk";
 import { config } from "./config";
 import { exposePlimsollDebug, trackSdkCalls } from "./debug";
+
+export type IndexerStatusState = "ok" | "lagging" | "unreachable";
+
+export interface IndexerStatus {
+  state: IndexerStatusState;
+  health?: IndexerHealth;
+  lastEventAgeSeconds?: number;
+}
 
 /**
  * How a figure reached us. Not the same as AssetView.source, which says which
@@ -170,6 +179,62 @@ export async function loadFromChain(sac: string): Promise<AssetView | null> {
 export async function loadReporters(): Promise<IndexerReporter[] | null> {
   if (!indexer) return null;
   return indexer.reporters();
+}
+
+/**
+ * Health and lag status of the indexer.
+ * Returns null immediately if no indexer URL is configured, making no network request.
+ */
+export async function loadIndexerStatus(
+  client: IndexerClient | null = indexer,
+  nowSecs = Math.floor(Date.now() / 1000),
+): Promise<IndexerStatus | null> {
+  if (!client || (client === indexer && !config.indexerUrl)) return null;
+  try {
+    const health = await client.health({ timeoutMs: 5_000 });
+    let lastEventAgeSeconds: number | undefined;
+    if (typeof health.last_event_age_seconds === "number") {
+      lastEventAgeSeconds = health.last_event_age_seconds;
+    } else if (typeof health.lag_seconds === "number") {
+      lastEventAgeSeconds = health.lag_seconds;
+    } else if (typeof health.last_event_at === "string") {
+      const parsed = Date.parse(health.last_event_at);
+      if (!Number.isNaN(parsed)) {
+        lastEventAgeSeconds = Math.max(0, Math.floor(nowSecs - parsed / 1000));
+      }
+    }
+
+    const isLagging =
+      health.status === "lagging" ||
+      (typeof lastEventAgeSeconds === "number" && lastEventAgeSeconds > 60) ||
+      (typeof health.lag_ledgers === "number" && health.lag_ledgers > 10);
+
+    if (isLagging) {
+      return {
+        state: "lagging",
+        health,
+        lastEventAgeSeconds,
+      };
+    }
+
+    if (health.status === "ok") {
+      return {
+        state: "ok",
+        health,
+        lastEventAgeSeconds,
+      };
+    }
+
+    return {
+      state: "unreachable",
+      health,
+      lastEventAgeSeconds,
+    };
+  } catch {
+    return {
+      state: "unreachable",
+    };
+  }
 }
 
 /** All assets: from the indexer when configured, otherwise from the chain. */

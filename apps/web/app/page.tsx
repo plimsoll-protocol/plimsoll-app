@@ -19,6 +19,16 @@ function matchesQuery(a: AssetView, q: string): boolean {
   return false;
 }
 
+export function ChainFallbackNotice({ networkName }: { networkName?: string }) {
+  const net = networkName ?? config.networkName;
+  return (
+    <div className="notice notice-warn mt" role="status" data-testid="chain-fallback-notice">
+      Reading directly from on-chain storage on {net}. This fallback list may not include every
+      listed asset (may be incomplete).
+    </div>
+  );
+}
+
 export default function Home() {
   const [assets, setAssets] = useState<AssetView[] | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -133,6 +143,7 @@ export default function Home() {
           />
         </div>
       ) : null}
+      {source === "chain" ? <ChainFallbackNotice /> : null}
 
       {error ? (
         <p className="notice notice-bad mt" role="alert">

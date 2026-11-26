@@ -9,6 +9,11 @@ import { handleGlobalShortcut } from "@/lib/keyboard-shortcuts";
 import { toggleTheme } from "@/lib/theme";
 import { ShortcutDialog } from "./ShortcutDialog";
 import { ThemeToggle } from "./ThemeToggle";
+import { usePathname } from "next/navigation";
+import { useEffect, useRef, useState } from "react";
+import { ago } from "@plimsoll/sdk";
+import { config, explorer } from "@/lib/config";
+import { loadIndexerStatus, type IndexerStatus } from "@/lib/data";
 import { PlimsollMark } from "./ui";
 
 const NAV = [
@@ -31,6 +36,7 @@ export function Header() {
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
   const [searchValue, setSearchValue] = useState("");
   const [searchError, setSearchError] = useState("");
+  const [prevPath, setPrevPath] = useState(path);
   const button = useRef<HTMLButtonElement>(null);
   const nav = useRef<HTMLElement>(null);
   const search = useRef<HTMLInputElement>(null);
@@ -88,9 +94,10 @@ export function Header() {
   }, [shortcutsOpen]);
 
   // Navigating closes the menu.
-  useEffect(() => {
+  if (prevPath !== path) {
+    setPrevPath(path);
     setOpen(false);
-  }, [path]);
+  }
 
   // Escape closes the menu and returns focus to its button; opening moves focus to the first link.
   useEffect(() => {
@@ -206,7 +213,64 @@ export function Header() {
   );
 }
 
-export function Footer() {
+export function IndexerStatusIndicator({
+  status: initialStatus,
+}: {
+  status?: IndexerStatus | null;
+}) {
+  const [status, setStatus] = useState<IndexerStatus | null | undefined>(initialStatus);
+  const [prevInitial, setPrevInitial] = useState(initialStatus);
+
+  if (prevInitial !== initialStatus) {
+    setPrevInitial(initialStatus);
+    setStatus(initialStatus);
+  }
+
+  useEffect(() => {
+    if (initialStatus !== undefined) return;
+    if (!config.indexerUrl) {
+      return;
+    }
+    let cancelled = false;
+    loadIndexerStatus()
+      .then((s) => {
+        if (!cancelled) setStatus(s);
+      })
+      .catch(() => {
+        if (!cancelled) setStatus({ state: "unreachable" });
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [initialStatus]);
+
+  if (!status) return null;
+
+  const label =
+    status.state === "ok"
+      ? "Indexer: healthy"
+      : status.state === "lagging"
+        ? `Indexer: lagging${
+            status.lastEventAgeSeconds !== undefined
+              ? ` (last event ${ago(status.lastEventAgeSeconds)})`
+              : ""
+          }`
+        : "Indexer: unreachable";
+
+  return (
+    <span
+      className={`indexer-status ${status.state}`}
+      data-testid="indexer-status"
+      data-status={status.state}
+      role="status"
+    >
+      <span className={`status-dot status-dot-${status.state}`} aria-hidden="true" />
+      <span>{label}</span>
+    </span>
+  );
+}
+
+export function Footer({ status }: { status?: IndexerStatus | null }) {
   return (
     <footer className="site-footer">
       <div className="wrap">
@@ -214,6 +278,7 @@ export function Footer() {
           Plimsoll — reserve coverage for Stellar-issued assets. Unaudited software on{" "}
           {config.networkName}.
         </span>
+        <IndexerStatusIndicator status={status} />
         <span className="row">
           <a href={DOCS_URL} target="_blank" rel="noreferrer">
             Docs

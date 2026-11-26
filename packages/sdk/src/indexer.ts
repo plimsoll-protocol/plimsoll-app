@@ -167,7 +167,14 @@ export interface RequestOptions {
 }
 
 export interface IndexerHealth {
-  status: string;
+  status: "ok" | "lagging" | string;
+  ingested_to_ledger?: number;
+  latest_ledger?: number;
+  lag_ledgers?: number;
+  lag_seconds?: number;
+  last_event_at?: string;
+  last_event_age_seconds?: number;
+  cursor?: number;
   [key: string]: unknown;
 }
 
@@ -249,7 +256,7 @@ export class IndexerClient {
 
   /** GET /healthz. */
   health(opts?: RequestOptions): Promise<IndexerHealth> {
-    return this.get(`/healthz`, opts);
+    return this.get<IndexerHealth>("/healthz", opts);
   }
 
   /**

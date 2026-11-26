@@ -13,11 +13,34 @@ const hanging: typeof fetch = (_url, init) =>
   });
 
 describe("IndexerClient options", () => {
-  it("health() calls /healthz", async () => {
-    const f = vi.fn(async () => json({ status: "ok" }));
+  it("health() calls /healthz and returns typed health data", async () => {
+    const f = vi.fn(async () => json({ status: "ok", ingested_to_ledger: 5034661 }));
     const c = new IndexerClient("http://x/", f as unknown as typeof fetch);
-    await expect(c.health()).resolves.toEqual({ status: "ok" });
+    const health = await c.health();
+    expect(health).toEqual({ status: "ok", ingested_to_ledger: 5034661 });
     expect((f.mock.calls[0] as unknown[])[0]).toBe("http://x/healthz");
+  });
+
+  it("health() returns typed lagging status with lag_seconds and last_event_at", async () => {
+    const laggingPayload = {
+      status: "lagging",
+      lag_seconds: 300,
+      last_event_at: "2026-01-01T00:00:00Z",
+      latest_ledger: 5035000,
+      ingested_to_ledger: 5034000,
+    };
+    const f = vi.fn(async () => json(laggingPayload));
+    const c = new IndexerClient("http://x", f as unknown as typeof fetch);
+    const health = await c.health();
+    expect(health.status).toBe("lagging");
+    expect(health.lag_seconds).toBe(300);
+    expect(health.last_event_at).toBe("2026-01-01T00:00:00Z");
+  });
+
+  it("health() throws IndexerError when server returns 503", async () => {
+    const f = vi.fn(async () => json({ error: "database down" }, 503));
+    const c = new IndexerClient("http://x", f as unknown as typeof fetch);
+    await expect(c.health()).rejects.toMatchObject({ name: "IndexerError", status: 503 });
   });
 
   it("sets no signal by default", async () => {
