@@ -13,6 +13,8 @@
     "build": "npm run build -w @plimsoll/sdk && npm run build -w @plimsoll/web",
     "dev": "npm run build -w @plimsoll/sdk && npm run dev -w @plimsoll/web",
     "test": "npm run test --workspaces --if-present",
+    "test:visual": "playwright test",
+    "test:visual:update": "playwright test --update-snapshots",
     "typecheck": "npm run typecheck --workspaces --if-present",
     "lint": "eslint .",
     "format": "prettier --write .",

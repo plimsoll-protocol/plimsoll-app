@@ -43,13 +43,16 @@ let connecting: Promise<string> | null = null;
  * Varial module; the ID is stable, so it is read from the module itself.
  */
 async function loadKit(): Promise<{ kit: Kit; options: WalletOption[] }> {
-  const [sdk, varial, xbull, albedo, lobstr, hana] = await Promise.all([
+  const [sdk, varial, xbull, albedo, lobstr, hana, ledgerResult] = await Promise.all([
     import("@creit.tech/stellar-wallets-kit/sdk"),
     import("@creit.tech/stellar-wallets-kit/modules/varial"),
     import("@creit.tech/stellar-wallets-kit/modules/xbull"),
     import("@creit.tech/stellar-wallets-kit/modules/albedo"),
     import("@creit.tech/stellar-wallets-kit/modules/lobstr"),
     import("@creit.tech/stellar-wallets-kit/modules/hana"),
+    // Ledger transport is optional — hardware wallet support. Some browsers or
+    // environments may not support it (no WebUSB/WebHID); we catch and continue.
+    import("@creit.tech/stellar-wallets-kit/modules/ledger").catch(() => null),
   ]);
 
   const definitions: Array<{
@@ -100,6 +103,9 @@ async function loadKit(): Promise<{ kit: Kit; options: WalletOption[] }> {
       const { LedgerModule } = ledgerResult as {
         LedgerModule: new () => ModuleInterface;
       };
+  if (ledgerResult) {
+    try {
+      const LedgerModule = (ledgerResult as { LedgerModule: new () => ModuleInterface }).LedgerModule;
       definitions.push({
         name: "Ledger",
         hint: "Hardware wallet via USB/HID",
@@ -108,6 +114,10 @@ async function loadKit(): Promise<{ kit: Kit; options: WalletOption[] }> {
       });
     } catch {
       // Transport not available in this browser/OS — skip silently.
+        module: new LedgerModule() as ModuleInterface,
+      });
+    } catch {
+      // LedgerModule constructor failed — transport not supported in this environment.
     }
   }
 

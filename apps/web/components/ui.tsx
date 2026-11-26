@@ -7,7 +7,7 @@ import {
   coverageStatus,
   tierLabel,
   type CoverageStatus,
-  type Tier,
+  Tier,
 } from "@plimsoll/sdk";
 
 export async function copyToClipboard(
@@ -106,6 +106,15 @@ const TIER_TOOLTIP: Record<Tier, string> = {
   1: "Tier 1 — Transcribed: a third party copied the figure from a public source",
   2: "Tier 2 — Issuer-signed: the asset issuer attested the reserve directly",
   3: "Tier 3 — Auditor-signed: an independent auditor verified the reserve",
+  [Tier.AuditorSigned]: "pill-tier-3",
+  [Tier.IssuerSigned]: "pill-tier-2",
+  [Tier.Transcribed]: "pill-tier-1",
+};
+
+const TIER_TOOLTIP: Record<Tier, string> = {
+  [Tier.AuditorSigned]: "Tier 3 — Auditor-signed: reserves independently verified by a registered auditor",
+  [Tier.IssuerSigned]: "Tier 2 — Issuer-signed: reserves attested directly by the asset issuer",
+  [Tier.Transcribed]: "Tier 1 — Transcribed: reserves copied from a public source by a registered transcriber",
 };
 
 export function TierPill({ tier }: { tier: Tier }) {

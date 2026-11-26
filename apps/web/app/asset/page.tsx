@@ -51,6 +51,7 @@ import {
 } from "@/lib/data";
 import { useAutoRefresh, useRefreshIntervalSetting } from "@/lib/refresh-interval";
 import { RefreshControls } from "@/components/RefreshControls";
+import { HistoryChart, type HistoryPoint } from "@/components/HistoryChart";
 
 export default function AssetPage() {
   return (
@@ -73,6 +74,28 @@ function AssetContent({ query }: { query: ReturnType<typeof assetFromSearch> }) 
   const [names, setNames] = useState<ReadonlyMap<string, string>>(new Map());
   const [intervalValue, setIntervalValue] = useRefreshIntervalSetting();
   const cancelRef = useRef<(() => void) | null>(null);
+  const [history, setHistory] = useState<HistoryPoint[] | null>(null);
+
+  useEffect(() => {
+    if (!sac || !indexer) return;
+    Promise.all([indexer.reportHistory(sac, 60), indexer.supplyHistory(sac, 1)])
+      .then(([reports, supplies]) => {
+        const latestSupply = BigInt(supplies[0]?.amount ?? "0");
+        if (latestSupply === 0n || reports.length === 0) return;
+        const pts: HistoryPoint[] = reports
+          .map((r) => {
+            const t = Math.floor(new Date(r.posted_at).getTime() / 1000);
+            const reserves = BigInt(r.amount);
+            const bps = latestSupply > 0n
+              ? Math.min(Number((reserves * 10_000n) / latestSupply), 65535)
+              : 0;
+            return { t, bps };
+          })
+          .sort((a, b) => a.t - b.t);
+        setHistory(pts);
+      })
+      .catch(() => {/* indexer unavailable; leave history null */});
+  }, [sac]);
 
   const fetch = useCallback(() => {
     if (!sac) return;
@@ -192,6 +215,16 @@ function AssetContent({ query }: { query: ReturnType<typeof assetFromSearch> }) 
             <StatusPill status={status} />
             {c ? <TierPill tier={c.tier} /> : null}
           </div>
+        <div className="row">
+          <StatusPill status={status} />
+          {c ? <TierPill tier={c.tier} /> : null}
+          <Link
+            href={`/share/?sac=${encodeURIComponent(asset.sac)}`}
+            className="button secondary"
+            style={{ padding: "6px 12px", fontSize: "0.85rem" }}
+          >
+            Share ↗
+          </Link>
         </div>
       </div>
 
@@ -396,6 +429,13 @@ function AssetContent({ query }: { query: ReturnType<typeof assetFromSearch> }) 
       ) : null}
 
       <ReconcileSection sac={asset.sac} />
+      {history && history.length > 1 ? (
+        <section className="mt" aria-labelledby="history-h">
+          <h2 id="history-h">Coverage history</h2>
+          <p className="sub">Reserve coverage ratio from the last {history.length} reports. Timestamps are UTC.</p>
+          <HistoryChart points={history} />
+        </section>
+      ) : null}
 
       <h2>What the issuer publishes</h2>
       <IssuerToml asset={asset} />

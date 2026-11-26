@@ -1064,6 +1064,51 @@ pre {
 .break {
   word-break: break-all;
 }
+
+.search-input {
+  font: inherit;
+  color: var(--ink);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 10px 12px;
+  width: 100%;
+}
+.search-input:focus {
+  outline: 2px solid var(--sea);
+  outline-offset: 2px;
+}
+
+/* sortable table header button */
+th button.sort-btn {
+  font: inherit;
+  font-size: inherit;
+  font-weight: inherit;
+  text-transform: inherit;
+  letter-spacing: inherit;
+  color: inherit;
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+th button.sort-btn:focus-visible {
+  outline: 2px solid var(--sea);
+  outline-offset: 2px;
+}
+
+/* history chart */
+.history-chart {
+  width: 100%;
+  overflow-x: auto;
+}
+.history-chart svg {
+  display: block;
+  max-width: 100%;
+}
 .mt {
   margin-top: 24px;
 }

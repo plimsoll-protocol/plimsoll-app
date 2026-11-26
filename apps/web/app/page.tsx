@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useCallback, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { AssetCard } from "@/components/AssetCard";
 import { Skeleton, nowSecs } from "@/components/ui";
 import { config } from "@/lib/config";
@@ -9,12 +10,24 @@ import { loadAssets, type AssetView } from "@/lib/data";
 import { useAutoRefresh, useRefreshIntervalSetting } from "@/lib/refresh-interval";
 import { RefreshControls } from "@/components/RefreshControls";
 
+function matchesQuery(a: AssetView, q: string): boolean {
+  const lq = q.toLowerCase();
+  if (a.code.toLowerCase().includes(lq)) return true;
+  if (a.issuer.toLowerCase().includes(lq)) return true;
+  if (a.toml?.org_name?.toLowerCase().includes(lq)) return true;
+  if (a.toml?.home_domain?.toLowerCase().includes(lq)) return true;
+  return false;
+}
+
 export default function Home() {
   const [assets, setAssets] = useState<AssetView[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [now, setNow] = useState(nowSecs());
   const [intervalValue, setIntervalValue] = useRefreshIntervalSetting();
   const cancelRef = useRef<(() => void) | null>(null);
+  const [query, setQuery] = useState("");
+  const [debouncedQuery, setDebouncedQuery] = useState("");
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const fetch = useCallback(() => {
     if (cancelRef.current) cancelRef.current();
@@ -36,8 +49,17 @@ export default function Home() {
   }, []);
 
   const { refresh } = useAutoRefresh(fetch, intervalValue);
+  const handleSearch = (value: string) => {
+    setQuery(value);
+    if (timerRef.current) clearTimeout(timerRef.current);
+    timerRef.current = setTimeout(() => setDebouncedQuery(value), 200);
+  };
 
   const source = assets?.[0]?.source;
+  const filtered =
+    assets && debouncedQuery.trim()
+      ? assets.filter((a) => matchesQuery(a, debouncedQuery.trim()))
+      : assets;
 
   return (
     <>
@@ -69,6 +91,23 @@ export default function Home() {
         </div>
       </div>
 
+      {assets !== null ? (
+        <div className="mt" style={{ maxWidth: 480 }}>
+          <label htmlFor="asset-search" className="sr-only">
+            Search assets
+          </label>
+          <input
+            id="asset-search"
+            type="search"
+            className="search-input"
+            placeholder="Search by code, issuer or organisation…"
+            value={query}
+            onChange={(e) => handleSearch(e.target.value)}
+            aria-label="Search assets by code, issuer or organisation"
+          />
+        </div>
+      ) : null}
+
       {error ? (
         <p className="notice notice-bad mt" role="alert">
           Could not load assets: {error}
@@ -85,10 +124,16 @@ export default function Home() {
                 <Skeleton height={14} width="70%" />
               </div>
             ))
-          : assets?.map((a) => <AssetCard key={a.sac} asset={a} now={now} />)}
+          : filtered?.map((a) => <AssetCard key={a.sac} asset={a} now={now} />)}
       </div>
 
-      {assets && assets.length === 0 ? (
+      {filtered && filtered.length === 0 && debouncedQuery.trim() ? (
+        <p className="notice notice-info mt">
+          No assets match &ldquo;{debouncedQuery}&rdquo;.
+        </p>
+      ) : null}
+
+      {assets && assets.length === 0 && !debouncedQuery.trim() ? (
         <p className="notice notice-info mt">
           No assets listed yet. <Link href="/list/">List the first one</Link>.
         </p>

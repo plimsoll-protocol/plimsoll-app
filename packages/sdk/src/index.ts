@@ -10,3 +10,4 @@ export * from "./verify";
 export * from "./doc-uri";
 export { TESTNET } from "./networks";
 export * from "./horizon";
+export * from "./cache";

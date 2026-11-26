@@ -80,6 +80,14 @@ export interface IndexerReporter {
   role: "auditor" | "transcriber" | "supply_poster";
   name: string;
   updated_at: string;
+  /** XLM stake in stroops (optional; absent on older indexer versions). */
+  stake?: string;
+  /** Total reports submitted (optional). */
+  reports?: number;
+  /** Number of accepted disputes against this reporter (optional). */
+  disputes?: number;
+  /** Reputation score 0–100 (optional). */
+  reputation?: number;
 }
 
 export interface IndexerNetwork {

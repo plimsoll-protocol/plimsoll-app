@@ -1,18 +1,22 @@
 /**
- * In-memory RPC response cache with stale-while-revalidate semantics.
+ * Optional in-memory cache for SDK method calls with stale-while-revalidate
+ * semantics.
  *
- * Time windows (all in milliseconds):
- *   - [0, maxAge)                 → fresh: return cached value immediately
- *   - [maxAge, maxAge + swr)      → stale: return cached value + kick off one
- *                                   background revalidation
- *   - [maxAge + swr, ∞)           → expired: block until a fresh value arrives
+ * Usage:
+ *   const cache = new RpcCache({ maxAge: 30_000, staleWhileRevalidate: 60_000 });
+ *   const result = await cache.get("key", () => expensiveRpcCall());
+ *
+ * - `maxAge`: how long a response is considered fresh (ms). Default: 30 000.
+ * - `staleWhileRevalidate`: how long a stale entry may be served while a
+ *   background refresh runs (ms). Default: 60 000. Set to 0 to disable SWR.
  */
-export interface RpcCacheOptions {
-  /** Maximum age in ms for which a cached value is considered fresh. */
-  maxAge: number;
-  /** Extra window in ms after maxAge during which stale data is served while
-   *  a background re-fetch runs. */
-  staleWhileRevalidate: number;
+
+export interface CacheOptions {
+  /** Max age before an entry becomes stale (ms). Default: 30 000. */
+  maxAge?: number;
+  /** Additional window during which stale data may be returned while a
+   *  background refresh is in flight (ms). Default: 60 000. */
+  staleWhileRevalidate?: number;
 }
 
 interface Entry<T> {
@@ -23,34 +27,28 @@ interface Entry<T> {
 
 export class RpcCache {
   private readonly maxAge: number;
-  private readonly swr: number;
+  private readonly staleWhileRevalidate: number;
   private readonly store = new Map<string, Entry<unknown>>();
 
-  constructor(opts: RpcCacheOptions) {
-    this.maxAge = opts.maxAge;
-    this.swr = opts.staleWhileRevalidate;
+  constructor(opts: CacheOptions = {}) {
+    this.maxAge = opts.maxAge ?? 30_000;
+    this.staleWhileRevalidate = opts.staleWhileRevalidate ?? 60_000;
   }
 
-  /**
-   * Return the cached value for `key` when fresh, serve stale + revalidate in
-   * the background when within the SWR window, or block for a fresh value when
-   * fully expired.
-   */
-  async get<T>(key: string, fetchFn: () => Promise<T>): Promise<T> {
+  /** Return a cached value or call `fetch` to populate the cache. */
+  async get<T>(key: string, fetch: () => Promise<T>): Promise<T> {
     const now = Date.now();
     const entry = this.store.get(key) as Entry<T> | undefined;
 
     if (entry) {
       const age = now - entry.fetchedAt;
-
       if (age < this.maxAge) {
         return entry.value;
       }
-
-      if (age < this.maxAge + this.swr) {
+      if (age < this.maxAge + this.staleWhileRevalidate) {
         if (!entry.revalidating) {
           entry.revalidating = true;
-          fetchFn()
+          fetch()
             .then((value) => {
               this.store.set(key, { value, fetchedAt: Date.now(), revalidating: false });
             })
@@ -62,18 +60,18 @@ export class RpcCache {
       }
     }
 
-    const value = await fetchFn();
+    const value = await fetch();
     this.store.set(key, { value, fetchedAt: Date.now(), revalidating: false });
     return value;
   }
 
-  /** Remove a single key from the cache. */
-  delete(key: string): void {
-    this.store.delete(key);
-  }
-
-  /** Remove all entries from the cache. */
+  /** Remove all entries. */
   clear(): void {
     this.store.clear();
+  }
+
+  /** Remove one entry. */
+  delete(key: string): void {
+    this.store.delete(key);
   }
 }

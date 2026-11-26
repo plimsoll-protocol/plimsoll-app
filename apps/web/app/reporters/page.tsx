@@ -10,6 +10,150 @@ import { indexer, loadReporters } from "@/lib/data";
 import { groupReporters, updatedAt } from "@/lib/reporters";
 import { useAutoRefresh, useRefreshIntervalSetting } from "@/lib/refresh-interval";
 import { RefreshControls } from "@/components/RefreshControls";
+import { groupReporters, updatedAt, type ReporterGroup } from "@/lib/reporters";
+
+type SortKey = "name" | "stake" | "reports" | "disputes" | "reputation" | "updated";
+type SortDir = "asc" | "desc";
+
+function sortReporters(list: IndexerReporter[], key: SortKey, dir: SortDir): IndexerReporter[] {
+  const sign = dir === "asc" ? 1 : -1;
+  return [...list].sort((a, b) => {
+    let cmp = 0;
+    if (key === "name") {
+      cmp = a.name.toLowerCase().localeCompare(b.name.toLowerCase()) || a.address.localeCompare(b.address);
+    } else if (key === "stake") {
+      cmp = Number(BigInt(a.stake ?? "0") - BigInt(b.stake ?? "0"));
+    } else if (key === "reports") {
+      cmp = (a.reports ?? 0) - (b.reports ?? 0);
+    } else if (key === "disputes") {
+      cmp = (a.disputes ?? 0) - (b.disputes ?? 0);
+    } else if (key === "reputation") {
+      cmp = (a.reputation ?? 0) - (b.reputation ?? 0);
+    } else if (key === "updated") {
+      const at = (r: IndexerReporter) => (r.updated_at ? Date.parse(r.updated_at) : 0);
+      cmp = at(a) - at(b);
+    }
+    return cmp * sign;
+  });
+}
+
+function formatStroke(stroops: string | undefined): string {
+  if (stroops === undefined) return "—";
+  const n = Number(BigInt(stroops)) / 1e7;
+  return `${n.toLocaleString(undefined, { maximumFractionDigits: 2 })} XLM`;
+}
+
+function SortTh({
+  col,
+  label,
+  current,
+  dir,
+  onSort,
+}: {
+  col: SortKey;
+  label: string;
+  current: SortKey;
+  dir: SortDir;
+  onSort: (k: SortKey) => void;
+}) {
+  const active = col === current;
+  const arrow = active ? (dir === "asc" ? " ↑" : " ↓") : "";
+  return (
+    <th scope="col">
+      <button
+        className="sort-btn"
+        onClick={() => onSort(col)}
+        aria-sort={active ? (dir === "asc" ? "ascending" : "descending") : "none"}
+      >
+        {label}
+        {arrow}
+      </button>
+    </th>
+  );
+}
+
+function ReporterTable({ group, now }: { group: ReporterGroup; now: number }) {
+  const [sortKey, setSortKey] = useState<SortKey>("name");
+  const [sortDir, setSortDir] = useState<SortDir>("asc");
+
+  const hasExtended = group.reporters.some(
+    (r) => r.stake !== undefined || r.reports !== undefined || r.disputes !== undefined || r.reputation !== undefined,
+  );
+
+  const handleSort = (key: SortKey) => {
+    if (key === sortKey) {
+      setSortDir((d) => (d === "asc" ? "desc" : "asc"));
+    } else {
+      setSortKey(key);
+      setSortDir("asc");
+    }
+  };
+
+  const rows = sortReporters(group.reporters, sortKey, sortDir);
+
+  return (
+    <div className="table-wrap">
+      <table>
+        <caption className="sr-only">
+          Registered {group.heading.toLowerCase()}, with their Stellar account and the last update to their entry
+        </caption>
+        <thead>
+          <tr>
+            <SortTh col="name" label="Name" current={sortKey} dir={sortDir} onSort={handleSort} />
+            <th scope="col">Address</th>
+            {hasExtended ? (
+              <>
+                <SortTh col="stake" label="Stake" current={sortKey} dir={sortDir} onSort={handleSort} />
+                <SortTh col="reports" label="Reports" current={sortKey} dir={sortDir} onSort={handleSort} />
+                <SortTh col="disputes" label="Disputes" current={sortKey} dir={sortDir} onSort={handleSort} />
+                <SortTh col="reputation" label="Reputation" current={sortKey} dir={sortDir} onSort={handleSort} />
+              </>
+            ) : null}
+            <SortTh col="updated" label="Last update" current={sortKey} dir={sortDir} onSort={handleSort} />
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((reporter) => {
+            const at = updatedAt(reporter.updated_at);
+            return (
+              <tr key={reporter.address}>
+                <td>{reporter.name || "—"}</td>
+                <td>
+                  <a
+                    className="mono"
+                    href={explorer.account(reporter.address)}
+                    target="_blank"
+                    rel="noreferrer"
+                    title={reporter.address}
+                  >
+                    {shortAddress(reporter.address, 8)}
+                  </a>
+                </td>
+                {hasExtended ? (
+                  <>
+                    <td className="num">{formatStroke(reporter.stake)}</td>
+                    <td className="num">{reporter.reports !== undefined ? reporter.reports.toLocaleString() : "—"}</td>
+                    <td className="num">{reporter.disputes !== undefined ? reporter.disputes.toLocaleString() : "—"}</td>
+                    <td className="num">{reporter.reputation !== undefined ? `${reporter.reputation}/100` : "—"}</td>
+                  </>
+                ) : null}
+                <td className="num">
+                  {at ? (
+                    <time dateTime={at.iso} title={new Date(at.epoch * 1000).toUTCString()}>
+                      {ago(now - at.epoch)}
+                    </time>
+                  ) : (
+                    "—"
+                  )}
+                </td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </div>
+  );
+}
 
 export default function ReportersPage() {
   const [reporters, setReporters] = useState<IndexerReporter[] | null>(null);
@@ -108,51 +252,7 @@ export default function ReportersPage() {
             <span className="sub">{group.reporters.length} registered</span>
           </div>
           <p className="sub">{group.description}</p>
-          <div className="table-wrap">
-            <table>
-              <caption className="sr-only">
-                Registered {group.heading.toLowerCase()}, with their Stellar account and the last
-                update to their entry
-              </caption>
-              <thead>
-                <tr>
-                  <th scope="col">Name</th>
-                  <th scope="col">Address</th>
-                  <th scope="col">Last update</th>
-                </tr>
-              </thead>
-              <tbody>
-                {group.reporters.map((reporter) => {
-                  const at = updatedAt(reporter.updated_at);
-                  return (
-                    <tr key={reporter.address}>
-                      <td>{reporter.name || "—"}</td>
-                      <td>
-                        <a
-                          className="mono"
-                          href={explorer.account(reporter.address)}
-                          target="_blank"
-                          rel="noreferrer"
-                          title={reporter.address}
-                        >
-                          {shortAddress(reporter.address, 8)}
-                        </a>
-                      </td>
-                      <td className="num">
-                        {at ? (
-                          <time dateTime={at.iso} title={new Date(at.epoch * 1000).toUTCString()}>
-                            {ago(now - at.epoch)}
-                          </time>
-                        ) : (
-                          "—"
-                        )}
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
+          <ReporterTable group={group} now={now} />
         </section>
       ))}
     </>
