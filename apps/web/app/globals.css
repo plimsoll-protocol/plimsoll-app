@@ -555,6 +555,45 @@ button.copy-trigger {
   font-weight: 600;
 }
 
+/* live updates banner (components/LiveUpdates.tsx) */
+.live-banner {
+  position: sticky;
+  top: 8px;
+  z-index: 5;
+  margin: 12px 0 0;
+  padding: 8px 14px;
+  border: 1px solid var(--warn);
+  border-radius: 999px;
+  background: var(--warn-bg);
+  color: var(--warn);
+  font-size: 0.9rem;
+  font-weight: 600;
+}
+
+/* reconciler status (app/asset/page.tsx) */
+details.reconcile > summary {
+  cursor: pointer;
+  font-weight: 600;
+}
+details.reconcile > summary .eyebrow {
+  display: inline;
+  margin-right: 6px;
+}
+.reconcile-facts {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 6px 16px;
+  margin: 12px 0;
+  font-size: 0.93rem;
+}
+.reconcile-facts dt {
+  color: var(--ink-3);
+}
+.reconcile-facts dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
 /* wallet picker (lib/wallet.ts) */
 .wallet-dialog-open {
   overflow: hidden;

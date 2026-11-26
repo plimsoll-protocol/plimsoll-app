@@ -16,6 +16,7 @@ import {
   sha256Hex,
   shortAddress,
   tierLabel,
+  type IndexerReconcileStatus,
   type SupplyBreakdown,
   type TomlCheck,
 } from "@plimsoll/sdk";
@@ -30,9 +31,11 @@ import {
   ratioText,
   statusOf,
 } from "@/components/ui";
+import { LiveUpdates } from "@/components/LiveUpdates";
 import { assetFromSearch } from "@/lib/asset-query";
 import { config, explorer } from "@/lib/config";
 import { embedCode } from "@/lib/badge";
+import { RECONCILE_DOCS, reconcileSummary, reconcileTime } from "@/lib/reconcile";
 import {
   contracts,
   indexer,
@@ -58,11 +61,16 @@ function AssetDetail() {
   const [error, setError] = useState<string | null>(null);
   const [now, setNow] = useState(nowSecs());
   const [names, setNames] = useState<ReadonlyMap<string, string>>(new Map());
+  // Bumped when the event stream says a new figure has landed, which re-runs
+  // the read below without discarding what is already on screen.
+  const [refresh, setRefresh] = useState(0);
 
   useEffect(() => {
     if (!sac) return;
+    let cancelled = false;
     loadAsset(sac)
       .then((a) => {
+        if (cancelled) return;
         setAsset(a);
         setNow(nowSecs());
         if (!a) return;
@@ -73,11 +81,18 @@ function AssetDetail() {
         // Names are an improvement on the addresses already shown, not a
         // precondition for them, so a failed lookup leaves the page as it is.
         loadReporterNames(addresses)
-          .then(setNames)
+          .then((n) => {
+            if (!cancelled) setNames(n);
+          })
           .catch((e: unknown) => console.warn("Could not load reporter names", e));
       })
-      .catch((e: unknown) => setError(e instanceof Error ? e.message : String(e)));
-  }, [sac]);
+      .catch((e: unknown) => {
+        if (!cancelled) setError(e instanceof Error ? e.message : String(e));
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [sac, refresh]);
 
   if (!query.ok) {
     return (
@@ -133,6 +148,7 @@ function AssetDetail() {
           History
         </Link>
       </p>
+      <LiveUpdates sac={asset.sac} onRefresh={() => setRefresh((n) => n + 1)} />
       <div className="spread">
         <div>
           <h1 style={{ marginBottom: 4 }}>{asset.code}</h1>
@@ -262,6 +278,8 @@ function AssetDetail() {
           posterName={names.get(asset.supply.poster)}
         />
       ) : null}
+
+      <ReconcileSection sac={asset.sac} />
 
       <h2>What the issuer publishes</h2>
       <IssuerToml asset={asset} />
@@ -608,6 +626,81 @@ function SupplySection({
         </p>
       ) : null}
     </>
+  );
+}
+
+/**
+ * The indexer's state reconciler for this asset: when it last ran and whether
+ * that run succeeded. Collapsed by default because it is diagnostic detail
+ * about where a figure came from, not part of the coverage reading.
+ */
+function ReconcileSection({ sac }: { sac: string }) {
+  const [status, setStatus] = useState<IndexerReconcileStatus | null | undefined>(undefined);
+  const [now, setNow] = useState(nowSecs());
+
+  useEffect(() => {
+    if (!indexer) return;
+    let cancelled = false;
+    indexer
+      .reconcileStatus(sac)
+      .then((s) => {
+        if (cancelled) return;
+        setStatus(s);
+        setNow(nowSecs());
+      })
+      .catch((e: unknown) => {
+        // A status that cannot be read is not proof the job is broken, and the
+        // section still has to say something: no status reads as not running.
+        console.warn("Could not read the reconciler status", e);
+        if (!cancelled) setStatus(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [sac]);
+
+  if (!indexer) return null;
+  if (status === undefined) return <p className="sub mt">Checking the reconciler…</p>;
+
+  const summary = reconcileSummary(status, sac, now);
+  const asset = status?.assets?.find((a) => a.sac === sac) ?? null;
+  const lastRun = reconcileTime(asset?.last_run_at ?? status?.last_run_at);
+  const outcome = asset?.outcome ?? status?.last_run_outcome ?? null;
+  const error = asset?.error ? `: ${asset.error.slice(0, 200)}` : "";
+
+  return (
+    <details className="card reconcile mt">
+      <summary>
+        <span className="eyebrow">Reconciler</span> {summary.headline}
+      </summary>
+      <p className="sub" style={{ marginTop: 10 }}>
+        {summary.detail}
+      </p>
+      <dl className="reconcile-facts">
+        <dt>Last run</dt>
+        <dd>{lastRun ? <time dateTime={lastRun}>{lastRun}</time> : "not reported"}</dd>
+        <dt>Outcome</dt>
+        <dd>
+          {outcome === "ok"
+            ? "Completed"
+            : outcome === "failed"
+              ? `Failed${error}`
+              : "not reported"}
+        </dd>
+        <dt>Rows recovered</dt>
+        <dd>
+          {asset
+            ? `${asset.recovered_supply ?? 0} supply, ${asset.recovered_reports ?? 0} report`
+            : "not reported for this asset"}
+        </dd>
+      </dl>
+      <p className="sub" style={{ marginBottom: 0 }}>
+        <a href={RECONCILE_DOCS} target="_blank" rel="noreferrer">
+          How the state reconciler works
+        </a>{" "}
+        in the indexer docs.
+      </p>
+    </details>
   );
 }
 
