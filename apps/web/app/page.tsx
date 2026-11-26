@@ -7,6 +7,9 @@ import { AssetCard } from "@/components/AssetCard";
 import { CoverageLegend, Skeleton, nowSecs } from "@/components/ui";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { Suspense } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { AssetCard } from "@/components/AssetCard";
 import { Skeleton, nowSecs } from "@/components/ui";
 import {
@@ -52,6 +55,61 @@ function Dashboard() {
   const router = useRouter();
   const params = useSearchParams();
   const selected = parseSelection(new URLSearchParams(params.toString()));
+import { Tier, tierLabel } from "@plimsoll/sdk";
+
+const TIER_FILTERS: { value: string | null; label: string }[] = [
+  { value: null, label: "All" },
+  {
+    value: String(Tier.Transcribed),
+    label: `Tier 1 · ${tierLabel(Tier.Transcribed)}`,
+  },
+  {
+    value: String(Tier.IssuerSigned),
+    label: `Tier 2 · ${tierLabel(Tier.IssuerSigned)}`,
+  },
+  {
+    value: String(Tier.AuditorSigned),
+    label: `Tier 3 · ${tierLabel(Tier.AuditorSigned)}`,
+  },
+];
+
+function TierFilter({
+  tier,
+  setTier,
+}: {
+  tier: string | null;
+  setTier: (next: string | null) => void;
+}) {
+  const active = tier !== null;
+  return (
+    <div className="row mt" role="group" aria-label="Filter assets by coverage tier">
+      <span className="sub">Filter by tier:</span>
+      {TIER_FILTERS.map((f) => (
+        <button
+          key={f.label}
+          type="button"
+          onClick={() => setTier(f.value)}
+          aria-pressed={tier === f.value ? true : undefined}
+          aria-current={tier === f.value ? "true" : undefined}
+          className={`pill ${tier === f.value ? "pill-covered" : ""}`}
+        >
+          {f.label}
+        </button>
+      ))}
+      {active && (
+        <button
+          type="button"
+          onClick={() => setTier(null)}
+          className="button secondary"
+        >
+          Clear filter
+        </button>
+      )}
+    </div>
+  );
+}
+
+function HomeContent() {
   const [assets, setAssets] = useState<AssetView[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [now, setNow] = useState(nowSecs());
@@ -63,6 +121,21 @@ function Dashboard() {
 
   const fetch = useCallback(() => {
     if (cancelRef.current) cancelRef.current();
+  const searchParams = useSearchParams();
+  const router = useRouter();
+  const tier = searchParams.get("tier");
+
+  const setTier = useCallback(
+    (next: string | null) => {
+      const params = new URLSearchParams(searchParams.toString());
+      if (next) params.set("tier", next);
+      else params.delete("tier");
+      router.replace(`?${params.toString()}`, { scroll: false });
+    },
+    [searchParams, router],
+  );
+
+  useEffect(() => {
     let cancelled = false;
     cancelRef.current = () => {
       cancelled = true;
@@ -99,6 +172,13 @@ export default function Home() {
     if (timerRef.current) clearTimeout(timerRef.current);
     timerRef.current = setTimeout(() => setDebouncedQuery(value), 200);
   };
+
+  const filtered = useMemo(() => {
+    if (!assets) return null;
+    if (!tier) return assets;
+    const t = Number(tier);
+    return assets.filter((a) => a.coverage?.tier === t);
+  }, [assets, tier]);
 
   const source = assets?.[0]?.source;
   const filtered =
@@ -208,6 +288,7 @@ export default function Home() {
           Select at least one asset with the Compare checkboxes on the cards below.
         </span>
       </section>
+      <TierFilter tier={tier} setTier={setTier} />
 
       {error ? (
         <p className="notice notice-bad mt" role="alert">
@@ -250,6 +331,25 @@ export default function Home() {
         <p className="notice notice-info mt">
           No assets listed yet. <Link href="/list/">List the first one</Link>.
         </p>
+      </div>
+
+      {assets && filtered!.length === 0 ? (
+        tier ? (
+          <p className="notice notice-info mt">
+            No assets match this filter.{" "}
+            <button
+              type="button"
+              onClick={() => setTier(null)}
+              className="button secondary"
+            >
+              Clear filter
+            </button>
+          </p>
+        ) : (
+          <p className="notice notice-info mt">
+            No assets listed yet. <Link href="/list/">List the first one</Link>.
+          </p>
+        )
       ) : null}
 
       <h2>How a reading is made</h2>
@@ -277,5 +377,13 @@ export default function Home() {
         </li>
       </ol>
     </>
+  );
+}
+
+export default function Home() {
+  return (
+    <Suspense fallback={<Skeleton height={40} width="40%" />}>
+      <HomeContent />
+    </Suspense>
   );
 }

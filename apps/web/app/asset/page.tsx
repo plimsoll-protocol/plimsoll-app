@@ -60,6 +60,7 @@ import {
   requestNotificationPermission,
 } from "@/lib/watchlist";
 import { useAutoRefresh } from "@/lib/refresh";
+import { logger } from "@/lib/logger";
 
 export default function AssetPage() {
   return (
@@ -126,6 +127,8 @@ function AssetContent({ query }: { query: ReturnType<typeof assetFromSearch> }) 
             if (!cancelled) setNames(n);
           })
           .catch((e: unknown) => console.warn("Could not load reporter names", e));
+          .then(setNames)
+          .catch((e: unknown) => logger.warn("Could not load reporter names", e));
       })
       .catch((e: unknown) => {
         if (!cancelled) setError(e instanceof Error ? e.message : String(e));
