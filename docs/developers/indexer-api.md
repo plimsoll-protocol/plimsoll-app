@@ -66,7 +66,52 @@ report. `coverage.bps` is `null` when supply is zero.
 | `GET /v1/assets/{sac}/supply?limit=100` | `{"supply":[…]}`, newest first |
 | `GET /v1/assets/{sac}/reports?limit=100` | `{"reports":[…]}`, newest first |
 | `GET /v1/reporters` | `{"reporters":[{"address","role","name","updated_at"}]}` |
+| `GET /v1/reconcile?asset={sac}` | The state reconciler's last run, optionally for one asset |
+| `GET /v1/assets/{sac}/events` | `text/event-stream` of new snapshots and reports |
 | `GET /v1/breakdowns/{hash}` | The exact bytes that were hashed |
+
+## `GET /v1/reconcile`
+
+The state reconciler reads each listed asset's `get_supply` and `get_report`
+back from the coverage ledger every `RECONCILE_INTERVAL` (15 minutes by
+default) and stores anything newer than event ingestion has, which repairs gaps
+longer than RPC's event retention. This endpoint says what the job last did.
+Pass `?asset={sac}` to narrow it to one asset.
+
+```json
+{
+  "running": true,
+  "interval_seconds": 900,
+  "last_run_at": "2026-11-24T09:15:02Z",
+  "last_run_outcome": "ok",
+  "assets": [
+    {
+      "sac": "CCHPT4TEJDPZQDSUVW3NP6A35ROGV4WEFZKT45SKWYCFZSUB7R5HIM7S",
+      "last_run_at": "2026-11-24T09:15:02Z",
+      "outcome": "ok",
+      "recovered_supply": 0,
+      "recovered_reports": 1,
+      "error": null
+    }
+  ]
+}
+```
+
+An indexer older than this endpoint answers `404`, which the app reports as
+"Reconciler not running" rather than as an error. The asset page asks for it
+lazily from the browser, so no other page depends on it.
+
+## `GET /v1/assets/{sac}/events`
+
+`text/event-stream` for one asset: one JSON object per `data:` line, with the
+same shapes the REST endpoints return. Each event carries a `kind` of
+`supply_posted`, `report_posted` or `coverage_changed`.
+
+`subscribeCoverageEvents` in `@plimsoll/sdk` wraps the stream with exponential
+back-off and an `onStateChange` callback. The asset page refreshes its figures
+when an event arrives, and shows "Live updates paused — reconnecting…" only
+after a stream that had opened drops. A deployment whose indexer does not serve
+the stream never opens, so it stays quiet instead of claiming to reconnect.
 
 ## Verifying a breakdown
 
