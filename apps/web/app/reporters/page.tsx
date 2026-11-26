@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useCallback, useRef, useState } from "react";
 import { ago, shortAddress, type IndexerReporter } from "@plimsoll/sdk";
+import { Breadcrumb } from "@/components/Breadcrumb";
 import { Skeleton, nowSecs } from "@/components/ui";
 import { config, explorer } from "@/lib/config";
 import { indexer, loadReporters } from "@/lib/data";

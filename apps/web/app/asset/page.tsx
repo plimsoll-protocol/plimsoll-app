@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { Suspense, useCallback, useEffect, useRef, useState } from "react";
 import {
+  Role,
   Tier,
   ago,
   checkStellarToml,
@@ -16,9 +17,11 @@ import {
   sha256Hex,
   shortAddress,
   tierLabel,
+  type IndexerReconcileStatus,
   type SupplyBreakdown,
   type TomlCheck,
 } from "@plimsoll/sdk";
+import { Breadcrumb } from "@/components/Breadcrumb";
 import {
   CopyButton,
   Gauge,
@@ -26,13 +29,17 @@ import {
   Stat,
   StatusPill,
   TierPill,
+  copyToClipboard,
   nowSecs,
   ratioText,
   statusOf,
 } from "@/components/ui";
+import { LiveUpdates } from "@/components/LiveUpdates";
 import { assetFromSearch } from "@/lib/asset-query";
 import { config, explorer } from "@/lib/config";
+import { connectWallet, connectedWalletAddress, signXdr } from "@/lib/wallet";
 import { embedCode } from "@/lib/badge";
+import { RECONCILE_DOCS, reconcileSummary, reconcileTime } from "@/lib/reconcile";
 import {
   contracts,
   indexer,
@@ -55,6 +62,10 @@ export default function AssetPage() {
 
 function AssetDetail() {
   const query = assetFromSearch(useSearchParams().toString(), config.network.networkPassphrase);
+  return <AssetContent key={query.ok ? query.sac : ""} query={query} />;
+}
+
+function AssetContent({ query }: { query: ReturnType<typeof assetFromSearch> }) {
   const sac = query.ok ? query.sac : "";
   const [asset, setAsset] = useState<AssetView | null | undefined>(undefined);
   const [error, setError] = useState<string | null>(null);
@@ -82,7 +93,9 @@ function AssetDetail() {
           .map((r) => r.reporter);
         if (a.supply) addresses.push(a.supply.poster);
         loadReporterNames(addresses)
-          .then(setNames)
+          .then((n) => {
+            if (!cancelled) setNames(n);
+          })
           .catch((e: unknown) => console.warn("Could not load reporter names", e));
       })
       .catch((e: unknown) => {
@@ -140,12 +153,17 @@ function AssetDetail() {
 
   return (
     <>
+      <Breadcrumb
+        items={[
+          { label: "Home", href: "/" },
+          { label: "Assets", href: "/" },
+          { label: asset.code },
+        ]}
+      />
       <p className="sub">
-        <Link href="/">All assets</Link> / {asset.code}{" "}
-        <Link href={`/asset/history/?sac=${asset.sac}`} style={{ marginLeft: 8 }}>
-          History
-        </Link>
+        <Link href={`/asset/history/?sac=${asset.sac}`}>History</Link>
       </p>
+      <LiveUpdates sac={asset.sac} onRefresh={() => setRefresh((n) => n + 1)} />
       <div className="spread">
         <div>
           <h1 style={{ marginBottom: 4 }}>{asset.code}</h1>
@@ -192,10 +210,18 @@ function AssetDetail() {
                 : "Needs both a supply snapshot and a reserve report."}
             </div>
           </div>
-          <LiveCheck sac={asset.sac} />
+          <div className="asset-print-hide"><LiveCheck sac={asset.sac} /></div>
         </div>
         <div className="mt">
           <Gauge bps={c?.bps} status={status} />
+          {c ? (
+            <div className="gauge-print asset-print-only" aria-hidden="true">
+              <div
+                className={`gauge-print-fill ${status}`}
+                style={{ width: `${Math.min((c.bps / 12500) * 100, 100)}%` }}
+              />
+            </div>
+          ) : null}
         </div>
       </section>
 
@@ -233,7 +259,24 @@ function AssetDetail() {
         />
       </div>
 
-      <h2>Reserve reports</h2>
+      <div className="spread">
+        <h2>Reserve reports</h2>
+        {!watcher && Object.values(asset.reports).some(Boolean) ? (
+          <button
+            type="button"
+            className="secondary"
+            onClick={connectWatcher}
+            disabled={connecting}
+          >
+            {connecting ? "Checking wallet…" : "Connect watcher wallet"}
+          </button>
+        ) : null}
+      </div>
+      {walletStatus ? (
+        <p className="sub" role="status">
+          {walletStatus}
+        </p>
+      ) : null}
       <p className="sub">
         Latest report per signer tier. Coverage uses the freshest one. Each report carries the
         SHA-256 of its source document, so you can check the file has not changed.
@@ -248,6 +291,7 @@ function AssetDetail() {
               <th>As of</th>
               <th>Signed by</th>
               <th>Document</th>
+              {watcher ? <th scope="col">Actions</th> : null}
             </tr>
           </thead>
           <tbody>
@@ -261,11 +305,12 @@ function AssetDetail() {
                   issuer={asset.issuer}
                   now={now}
                   name={names.get(r.reporter)}
+                  onDispute={watcher && asset.sac === sac ? () => setSelected(r) : undefined}
                 />
               ) : (
                 <tr key={tier}>
                   <td>{tierLabel(tier)}</td>
-                  <td colSpan={5} className="sub">
+                  <td colSpan={watcher ? 6 : 5} className="sub">
                     No report at this tier.
                   </td>
                 </tr>
@@ -273,6 +318,73 @@ function AssetDetail() {
             })}
           </tbody>
         </table>
+      </div>
+
+      <dialog
+        ref={dialog}
+        className="wallet-dialog"
+        aria-labelledby="dispute-title"
+        onClose={() => setSelected(null)}
+        onCancel={(event) => {
+          if (inFlight.current) event.preventDefault();
+        }}
+      >
+        <div className="wallet-dialog-head">
+          <h2 id="dispute-title">Dispute reserve report</h2>
+        </div>
+        {selected ? (
+          <div className="wallet-dialog-body">
+            <dl>
+              <dt>Asset</dt>
+              <dd>
+                {asset.code} <code className="break">{asset.sac}</code>
+              </dd>
+              <dt>Tier</dt>
+              <dd>{tierLabel(selected.tier)}</dd>
+              <dt>Reserves</dt>
+              <dd>{formatUnits(selected.amount)}</dd>
+              <dt>As of (UTC)</dt>
+              <dd>{new Date(selected.asOf * 1000).toISOString()}</dd>
+              <dt>Reporter</dt>
+              <dd>
+                <code className="break">{selected.reporter}</code>
+              </dd>
+            </dl>
+            <div className="row">
+              <button
+                ref={cancelButton}
+                type="button"
+                className="secondary"
+                disabled={submitting}
+                onClick={() => dialog.current?.close()}
+              >
+                Cancel
+              </button>
+              <button type="button" disabled={submitting} onClick={dispute}>
+                {submitting ? "Submitting dispute…" : "Confirm dispute"}
+              </button>
+            </div>
+          </div>
+        ) : null}
+      </dialog>
+      <div className="dispute-toast" aria-live="polite">
+        {outcome ? (
+          <div className={`notice ${"hash" in outcome ? "notice-ok" : "notice-bad"}`}>
+            {"hash" in outcome ? (
+              <>
+                Dispute submitted.{" "}
+                <a href={explorer.tx(outcome.hash)} target="_blank" rel="noreferrer">
+                  View transaction
+                </a>
+              </>
+            ) : (
+              <>Dispute failed. {outcome.error}</>
+            )}{" "}
+            <button type="button" className="secondary" onClick={() => setOutcome(null)}>
+              Dismiss
+            </button>
+          </div>
+        ) : null}
       </div>
 
       {asset.supply ? (
@@ -283,10 +395,12 @@ function AssetDetail() {
         />
       ) : null}
 
+      <ReconcileSection sac={asset.sac} />
+
       <h2>What the issuer publishes</h2>
       <IssuerToml asset={asset} />
 
-      <EmbedBadge sac={asset.sac} />
+      <div className="asset-print-hide"><EmbedBadge sac={asset.sac} /></div>
     </>
   );
 }
@@ -315,12 +429,14 @@ function ReportRow({
   issuer,
   now,
   name,
+  onDispute,
 }: {
   report: ReportView;
   supply: bigint | undefined;
   issuer: string;
   now: number;
   name?: string;
+  onDispute?: () => void;
 }) {
   const covers =
     supply && supply > 0n ? bpsToPercent(Number((report.amount * 10_000n) / supply)) : "—";
@@ -375,6 +491,18 @@ function ReportRow({
           </span>
         )}
       </td>
+      {onDispute ? (
+        <td>
+          <button
+            type="button"
+            className="secondary"
+            onClick={onDispute}
+            aria-label={`Dispute ${tierLabel(report.tier)} report`}
+          >
+            Dispute
+          </button>
+        </td>
+      ) : null}
     </tr>
   );
 }
@@ -632,6 +760,81 @@ function SupplySection({
 }
 
 /**
+ * The indexer's state reconciler for this asset: when it last ran and whether
+ * that run succeeded. Collapsed by default because it is diagnostic detail
+ * about where a figure came from, not part of the coverage reading.
+ */
+function ReconcileSection({ sac }: { sac: string }) {
+  const [status, setStatus] = useState<IndexerReconcileStatus | null | undefined>(undefined);
+  const [now, setNow] = useState(nowSecs());
+
+  useEffect(() => {
+    if (!indexer) return;
+    let cancelled = false;
+    indexer
+      .reconcileStatus(sac)
+      .then((s) => {
+        if (cancelled) return;
+        setStatus(s);
+        setNow(nowSecs());
+      })
+      .catch((e: unknown) => {
+        // A status that cannot be read is not proof the job is broken, and the
+        // section still has to say something: no status reads as not running.
+        console.warn("Could not read the reconciler status", e);
+        if (!cancelled) setStatus(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [sac]);
+
+  if (!indexer) return null;
+  if (status === undefined) return <p className="sub mt">Checking the reconciler…</p>;
+
+  const summary = reconcileSummary(status, sac, now);
+  const asset = status?.assets?.find((a) => a.sac === sac) ?? null;
+  const lastRun = reconcileTime(asset?.last_run_at ?? status?.last_run_at);
+  const outcome = asset?.outcome ?? status?.last_run_outcome ?? null;
+  const error = asset?.error ? `: ${asset.error.slice(0, 200)}` : "";
+
+  return (
+    <details className="card reconcile mt">
+      <summary>
+        <span className="eyebrow">Reconciler</span> {summary.headline}
+      </summary>
+      <p className="sub" style={{ marginTop: 10 }}>
+        {summary.detail}
+      </p>
+      <dl className="reconcile-facts">
+        <dt>Last run</dt>
+        <dd>{lastRun ? <time dateTime={lastRun}>{lastRun}</time> : "not reported"}</dd>
+        <dt>Outcome</dt>
+        <dd>
+          {outcome === "ok"
+            ? "Completed"
+            : outcome === "failed"
+              ? `Failed${error}`
+              : "not reported"}
+        </dd>
+        <dt>Rows recovered</dt>
+        <dd>
+          {asset
+            ? `${asset.recovered_supply ?? 0} supply, ${asset.recovered_reports ?? 0} report`
+            : "not reported for this asset"}
+        </dd>
+      </dl>
+      <p className="sub" style={{ marginBottom: 0 }}>
+        <a href={RECONCILE_DOCS} target="_blank" rel="noreferrer">
+          How the state reconciler works
+        </a>{" "}
+        in the indexer docs.
+      </p>
+    </details>
+  );
+}
+
+/**
  * The issuer's SEP-1 stellar.toml entry for this asset. Uses the indexer's
  * copy when it confirms the asset; otherwise checks live from the browser,
  * so a newly published file shows up without waiting for the indexer.
@@ -722,19 +925,37 @@ function IssuerToml({ asset }: { asset: AssetView }) {
   );
 }
 
+type CopyState = "idle" | "copied" | "failed";
+
 function EmbedBadge({ sac }: { sac: string }) {
-  const [copied, setCopied] = useState(false);
+  const [state, setState] = useState<CopyState>("idle");
+  const timeout = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const snippetRef = useRef<HTMLPreElement>(null);
   const origin = typeof window !== "undefined" ? window.location.origin : "";
   const snippet = embedCode(sac, { origin, basePath: config.basePath });
 
+  useEffect(
+    () => () => {
+      if (timeout.current) clearTimeout(timeout.current);
+    },
+    [],
+  );
+
   const copy = async () => {
-    try {
-      await navigator.clipboard.writeText(snippet);
-      setCopied(true);
-      window.setTimeout(() => setCopied(false), 2000);
-    } catch {
-      setCopied(false);
-    }
+    const copied = await copyToClipboard(snippet);
+    setState(copied ? "copied" : "failed");
+    if (timeout.current) clearTimeout(timeout.current);
+    timeout.current = setTimeout(() => setState("idle"), 2000);
+    if (copied) return;
+    // No clipboard API (or permission denied): select the snippet in place so
+    // the reader can copy it with the keyboard instead.
+    const pre = snippetRef.current;
+    const selection = typeof window === "undefined" ? null : window.getSelection();
+    if (!pre || !selection) return;
+    const range = document.createRange();
+    range.selectNodeContents(pre);
+    selection.removeAllRanges();
+    selection.addRange(range);
   };
 
   return (
@@ -743,10 +964,17 @@ function EmbedBadge({ sac }: { sac: string }) {
       <p className="sub">
         Copy this snippet to show a live reserve-coverage badge that links back to this asset page.
       </p>
-      <pre style={{ overflowX: "auto", margin: "8px 0" }}>{snippet}</pre>
+      <pre ref={snippetRef} tabIndex={0} style={{ overflowX: "auto", margin: "8px 0" }}>{snippet}</pre>
       <button type="button" className="secondary" onClick={copy}>
-        {copied ? "Copied" : "Copy embed code"}
+        {state === "copied" ? "Copied!" : "Copy embed code"}
       </button>
+      <p className="sub" role="status" aria-live="polite" style={{ margin: "8px 0 0" }}>
+        {state === "copied"
+          ? "Snippet copied to the clipboard."
+          : state === "failed"
+            ? "Copying is unavailable here. The snippet is selected above — press Ctrl/Cmd+C to copy it."
+            : null}
+      </p>
     </section>
   );
 }

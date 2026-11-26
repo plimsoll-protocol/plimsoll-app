@@ -16,6 +16,7 @@ import {
   coverageStatus,
   decodeCoverage,
   decodeReport,
+  decodeWithdrawalRequest,
   formatUnits,
   matchesHash,
   parseUnits,
@@ -157,6 +158,55 @@ describe("contract helpers", () => {
   });
 });
 
+describe("vault helpers", () => {
+  it("decodes a withdrawal request", () => {
+    const req = decodeWithdrawalRequest({
+      to: "GBIE3ANCRVCBWETUZXWYKRMP27LQVJHX757XXAQUT3LYHVTNFPPPXEY4",
+      amount: 50_000_000n,
+      submitted_at: 1_234_567,
+    });
+    expect(req.to).toBe("GBIE3ANCRVCBWETUZXWYKRMP27LQVJHX757XXAQUT3LYHVTNFPPPXEY4");
+    expect(req.amount).toBe(50_000_000n);
+    expect(req.submittedAt).toBe(1_234_567);
+  });
+
+  it("returns an empty array when the queue is empty", async () => {
+    const { CoveredVaultClient } = await import("../src/vault");
+    const vaultId = "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABSC4";
+
+    class StubVaultClient extends CoveredVaultClient {
+      protected override async read(): Promise<unknown> {
+        return null;
+      }
+    }
+
+    const client = new StubVaultClient(TESTNET, vaultId);
+    const queue = await client.getPendingWithdrawals(vaultId);
+    expect(queue).toEqual([]);
+  });
+
+  it("decodes a non-empty queue", async () => {
+    const { CoveredVaultClient } = await import("../src/vault");
+    const vaultId = "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABSC4";
+    const address = "GBIE3ANCRVCBWETUZXWYKRMP27LQVJHX757XXAQUT3LYHVTNFPPPXEY4";
+
+    class StubVaultClient extends CoveredVaultClient {
+      protected override async read(): Promise<unknown> {
+        return [
+          { to: address, amount: 50_000_000n, submitted_at: 100 },
+          { to: address, amount: 25_000_000n, submitted_at: 200 },
+        ];
+      }
+    }
+
+    const client = new StubVaultClient(TESTNET, vaultId);
+    const queue = await client.getPendingWithdrawals(vaultId);
+    expect(queue).toHaveLength(2);
+    expect(queue[0]).toEqual({ to: address, amount: 50_000_000n, submittedAt: 100 });
+    expect(queue[1]).toEqual({ to: address, amount: 25_000_000n, submittedAt: 200 });
+  });
+});
+
 describe("verify", () => {
   it("hashes like sha256sum", async () => {
     const body = new TextEncoder().encode("abc");
@@ -217,6 +267,9 @@ describe.skipIf(!process.env.PLIMSOLL_LIVE)(
       expect(cov!.bps).toBeGreaterThan(0);
       const report = await live(ctx, () => client.getReport(pusd, Tier.IssuerSigned));
       expect(report?.reporter).toBe(TESTNET.assets.PUSD!.issuer);
+    });
+
+    it("passes the PUSD is_covered smoke check", async (ctx) => {
       const covered = await live(ctx, () =>
         client.isCovered(pusd, 0, 10 * 365 * 86_400, Tier.Transcribed),
       );

@@ -98,11 +98,15 @@ describe("typed contract errors", () => {
     expect(new ContractCallError("m", "HostError: Error(Contract, #5)").code).toBe(5);
     expect(new ContractCallError("m", "status ERROR").code).toBeUndefined();
     expect(parseContractErrorCode("Error(Contract, #11)")).toBe(11);
+    expect(parseContractErrorCode("Error(Contract, #12)")).toBe(12);
+    expect(parseContractErrorCode("Error(Contract, #13)")).toBe(13);
     expect(parseContractErrorCode("Error(Storage, MissingValue)")).toBeUndefined();
   });
 
   it("describes known codes per contract", () => {
     expect(describeError(LedgerError.NotReporter)).toContain("not the issuer");
+    expect(describeError(LedgerError.ImplausibleAmount)).toContain("0.01% to 10,000%");
+    expect(describeError(LedgerError.TooManyReporters)).toContain("maximum of 4 active reporters");
     expect(describeError(VaultError.NotCovered, "vault")).toContain("not covered");
     expect(describeError(99)).toBeUndefined();
   });

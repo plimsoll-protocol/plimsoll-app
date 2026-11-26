@@ -1,0 +1,64 @@
+name: Bundle size
+
+# Builds @plimsoll/sdk, measures the gzipped ESM bundle with size-limit and
+# fails when it exceeds the limit in packages/sdk/package.json ("size-limit").
+# On a pull request the result is also posted (and later updated) as a comment.
+#
+# The comment needs write access to pull requests, which GitHub withholds from
+# workflows that run for pull requests opened from forks. That step is allowed
+# to fail without failing the job; the result is always in the job summary, and
+# the size check itself does not depend on the comment.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  size:
+    name: bundle size
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Build SDK
+        run: npm run build -w @plimsoll/sdk
+      - name: Measure the ESM bundle
+        id: measure
+        run: |
+          set +e
+          npm run --silent size -w @plimsoll/sdk -- --json > size.json
+          echo "code=$?" >> "$GITHUB_OUTPUT"
+      - name: Write the report
+        run: (node packages/sdk/scripts/size-report.mjs size.json || true) | tee size-comment.md >> "$GITHUB_STEP_SUMMARY"
+      - name: Comment on the pull request
+        if: github.event_name == 'pull_request'
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          id=$(gh api "repos/$GITHUB_REPOSITORY/issues/$PR_NUMBER/comments" --paginate \
+            --jq '.[] | select(.body | contains("<!-- plimsoll-bundle-size -->")) | .id' | head -n 1)
+          if [ -n "$id" ]; then
+            gh api --method PATCH "repos/$GITHUB_REPOSITORY/issues/comments/$id" -F body=@size-comment.md
+          else
+            gh api --method POST "repos/$GITHUB_REPOSITORY/issues/$PR_NUMBER/comments" -F body=@size-comment.md
+          fi
+      - name: Fail when over the limit
+        if: steps.measure.outputs.code != '0'
+        run: |
+          echo "::error::The SDK bundle is over its size limit, or could not be measured. See the job summary."
+          exit 1

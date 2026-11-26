@@ -166,12 +166,17 @@ export interface ReservePostArgs {
 
 /** Shared RPC plumbing: simulated reads and prepared (unsigned) transactions. */
 export abstract class ContractClient {
-  readonly server: rpc.Server;
+  private _server: rpc.Server | undefined;
 
   constructor(protected readonly network: NetworkConfig) {
-    this.server = new rpc.Server(network.rpcUrl, {
-      allowHttp: network.rpcUrl.startsWith("http://"),
+    this._server = undefined;
+  }
+
+  get server(): rpc.Server {
+    this._server ??= new rpc.Server(this.network.rpcUrl, {
+      allowHttp: this.network.rpcUrl.startsWith("http://"),
     });
+    return this._server;
   }
 
   protected async read(contract: Contract, method: string, args: xdr.ScVal[]): Promise<unknown> {
@@ -278,6 +283,20 @@ export class PlimsollContracts extends ContractClient {
   }
 
   // -- writes: return prepared, unsigned transaction XDR --
+
+  /** Dispute the report identified by SAC and its Unix timestamp in seconds. */
+  async prepareDisputeReport(
+    watcher: string,
+    sac: string,
+    asOf: number | bigint,
+    opts?: PrepareOptions,
+  ): Promise<string> {
+    return this.prepare(
+      watcher,
+      this.ledger.call("dispute_report", addr(watcher), addr(sac), u64(asOf)),
+      opts,
+    );
+  }
 
   /** List a classic asset by SAC address. Anyone may call it. */
   async prepareListAsset(source: string, sac: string, opts?: PrepareOptions): Promise<string> {

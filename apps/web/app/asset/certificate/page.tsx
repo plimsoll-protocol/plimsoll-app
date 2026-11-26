@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { Suspense, useEffect, useState } from "react";
 import { ago, bpsToPercent, formatUnits, tierLabel, shortAddress, type Tier } from "@plimsoll/sdk";
+import { Breadcrumb } from "@/components/Breadcrumb";
 import { Skeleton, PlimsollMark, nowSecs } from "@/components/ui";
 import { loadAsset, type AssetView } from "@/lib/data";
 import styles from "./certificate.module.css";
@@ -65,16 +66,19 @@ function CertificateDetail() {
 
   return (
     <>
-      <p className="sub no-print">
-        <Link href={`/asset/?sac=${asset.sac}`}>← Back to asset</Link>
-        <button
-          className="button no-print"
-          onClick={() => window.print()}
-          style={{ marginLeft: 16 }}
-        >
+      <div className="spread no-print">
+        <Breadcrumb
+          items={[
+            { label: "Home", href: "/" },
+            { label: "Assets", href: "/" },
+            { label: asset.code, href: `/asset/?sac=${asset.sac}` },
+            { label: "Certificate" },
+          ]}
+        />
+        <button className="button no-print" onClick={() => window.print()}>
           Print / Save as PDF
         </button>
-      </p>
+      </div>
 
       <div className={styles.certificate}>
         <header className={styles.header}>

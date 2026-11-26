@@ -245,12 +245,13 @@ function HistoryChart({ rows }: { rows: ChartRow[] }) {
   const y100 = cy(10_000);
 
   return (
-    <svg
-      viewBox={`0 0 ${W} ${H}`}
-      style={{ width: "100%", maxWidth: W, marginTop: 16, display: "block" }}
-      role="img"
-      aria-label="Coverage BPS over time"
-    >
+    <div className="chart" style={{ maxWidth: W, marginTop: 16 }}>
+      <svg
+        viewBox={`0 0 ${W} ${H}`}
+        style={{ width: "100%", display: "block" }}
+        role="img"
+        aria-label="Coverage BPS over time"
+      >
       {/* 100% reference line */}
       {y100 >= PAD.top && y100 <= PAD.top + plotH ? (
         <line
@@ -258,7 +259,7 @@ function HistoryChart({ rows }: { rows: ChartRow[] }) {
           y1={y100}
           x2={W - PAD.right}
           y2={y100}
-          stroke="var(--ok)"
+          stroke="var(--chart-ref)"
           strokeWidth="1"
           strokeDasharray="4 2"
           opacity="0.6"
@@ -270,7 +271,7 @@ function HistoryChart({ rows }: { rows: ChartRow[] }) {
         y1={PAD.top}
         x2={PAD.left}
         y2={PAD.top + plotH}
-        stroke="var(--line)"
+        stroke="var(--chart-grid)"
         strokeWidth="1"
       />
       <line
@@ -278,7 +279,7 @@ function HistoryChart({ rows }: { rows: ChartRow[] }) {
         y1={PAD.top + plotH}
         x2={W - PAD.right}
         y2={PAD.top + plotH}
-        stroke="var(--line)"
+        stroke="var(--chart-grid)"
         strokeWidth="1"
       />
       {/* Y-axis label */}
@@ -287,7 +288,7 @@ function HistoryChart({ rows }: { rows: ChartRow[] }) {
         y={PAD.top + plotH / 2}
         textAnchor="end"
         fontSize="10"
-        fill="var(--ink-3)"
+        fill="var(--chart-axis)"
         dominantBaseline="middle"
       >
         BPS
@@ -296,7 +297,7 @@ function HistoryChart({ rows }: { rows: ChartRow[] }) {
       <polyline
         points={polyline}
         fill="none"
-        stroke="var(--sea)"
+        stroke="var(--chart-line)"
         strokeWidth="2"
         strokeLinejoin="round"
         strokeLinecap="round"
@@ -308,10 +309,11 @@ function HistoryChart({ rows }: { rows: ChartRow[] }) {
           cx={cx(r.timestamp)}
           cy={cy(r.bps)}
           r={3}
-          fill="var(--sea)"
+          fill="var(--chart-point)"
           aria-label={`${new Date(r.timestamp * 1000).toISOString().slice(0, 10)}: ${r.bps} BPS`}
         />
       ))}
-    </svg>
+      </svg>
+    </div>
   );
 }

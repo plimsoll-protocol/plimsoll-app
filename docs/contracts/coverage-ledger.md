@@ -49,6 +49,8 @@ coverage questions.
 | 9 | `FutureTimestamp` | report `as_of` in the future |
 | 10 | `StaleReport` | report `as_of` not newer than the last at the same tier |
 | 11 | `InvalidUri` | `doc_uri` empty or over 256 bytes |
+| 12 | `ImplausibleAmount` | reserve figure outside 0.01% to 10,000% of stored supply |
+| 13 | `TooManyReporters` | asset already has maximum of 4 active reporters at this tier |
 
 ## Events
 

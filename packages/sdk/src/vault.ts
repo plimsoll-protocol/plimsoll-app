@@ -1,6 +1,6 @@
 import { Contract } from "@stellar/stellar-sdk";
 import { ContractClient, addr, big, i128, num, opt, type Raw } from "./contract";
-import type { NetworkConfig, Tier } from "./types";
+import type { NetworkConfig, Tier, WithdrawalRequest } from "./types";
 
 /** The vault's fixed coverage requirement. */
 export interface VaultConfig {
@@ -21,6 +21,14 @@ export function decodeVaultConfig(raw: Raw): VaultConfig {
     minBps: num(raw.min_bps),
     maxAge: num(raw.max_age),
     minTier: num(raw.min_tier) as Tier,
+  };
+}
+
+export function decodeWithdrawalRequest(raw: Raw): WithdrawalRequest {
+  return {
+    to: String(raw.to),
+    amount: big(raw.amount),
+    submittedAt: num(raw.submitted_at),
   };
 }
 
@@ -53,5 +61,28 @@ export class CoveredVaultClient extends ContractClient {
 
   async prepareWithdraw(to: string, amount: bigint): Promise<string> {
     return this.prepare(to, this.vault.call("withdraw", addr(to), i128(amount)));
+  }
+
+  /**
+   * Returns all entries currently in the vault's withdrawal queue, ordered
+   * oldest-first as the contract stores them.
+   *
+   * @param vaultAddress - The contract ID of the vault to query. Must be the
+   *   same vault this client was constructed for, or any vault that exposes
+   *   the same `get_withdrawal_queue` view function.
+   * @returns An array of pending {@link WithdrawalRequest} objects, or an
+   *   empty array when the queue is empty.
+   *
+   * @example
+   * ```ts
+   * const queue = await vaultClient.getPendingWithdrawals(VAULT_ID);
+   * console.log(`${queue.length} withdrawal(s) pending`);
+   * ```
+   */
+  async getPendingWithdrawals(vaultAddress: string): Promise<WithdrawalRequest[]> {
+    const vault = new Contract(vaultAddress);
+    const v = await this.read(vault, "get_withdrawal_queue", []);
+    if (!Array.isArray(v)) return [];
+    return v.map((r) => decodeWithdrawalRequest(r as Raw));
   }
 }

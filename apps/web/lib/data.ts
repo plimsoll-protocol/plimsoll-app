@@ -9,6 +9,7 @@ import {
   type IndexerToml,
 } from "@plimsoll/sdk";
 import { config } from "./config";
+import { exposePlimsollDebug, trackSdkCalls } from "./debug";
 
 /**
  * How a figure reached us. Not the same as AssetView.source, which says which
@@ -61,16 +62,19 @@ export interface AssetView {
   source: "indexer" | "chain";
 }
 
-export const contracts = new PlimsollContracts(config.network);
+export const contracts = trackSdkCalls(new PlimsollContracts(config.network), "contracts");
 // A sleeping free-tier indexer can take a minute to wake; fall back to the
 // chain rather than leave the page loading.
 const INDEXER_TIMEOUT_MS = 8_000;
 const fetchWithTimeout: typeof fetch = (input, init) =>
   fetch(input, { ...init, signal: AbortSignal.timeout(INDEXER_TIMEOUT_MS) });
 
-export const indexer = config.indexerUrl
+const indexerClient = config.indexerUrl
   ? new IndexerClient(config.indexerUrl, fetchWithTimeout)
   : null;
+export const indexer = indexerClient ? trackSdkCalls(indexerClient, "indexer") : null;
+
+exposePlimsollDebug({ contracts, indexer }, config);
 
 const secs = (iso: string) => Math.floor(new Date(iso).getTime() / 1000);
 

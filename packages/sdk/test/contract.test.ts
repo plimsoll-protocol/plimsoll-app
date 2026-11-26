@@ -201,6 +201,28 @@ describe("PlimsollContracts writes", () => {
     expect((tx as Transaction).sequence).toBe("42");
   });
 
+  it("prepares a report dispute from the watcher with the asset and u64 timestamp", async () => {
+    const client = new PlimsollContracts(config);
+    vi.spyOn(client.server, "getAccount").mockResolvedValue(new Account(source, "1"));
+    vi.spyOn(client.server, "prepareTransaction").mockImplementation(
+      async (tx) => tx as Transaction,
+    );
+
+    const asOf = 1_700_000_000n;
+    const out = await client.prepareDisputeReport(source, sac, asOf);
+    const tx = TransactionBuilder.fromXDR(out, config.networkPassphrase) as Transaction;
+    const call = invocationOf(out);
+    expect(tx.source).toBe(source);
+    expect(tx.signatures).toHaveLength(0);
+    expect(Address.fromScAddress(call.contractAddress).toString()).toBe(config.coverageLedgerId);
+    expect(call.functionName.toString()).toBe("dispute_report");
+    expect(call.args).toEqual([
+      Address.fromString(source).toScVal(),
+      Address.fromString(sac).toScVal(),
+      nativeToScVal(asOf, { type: "u64" }),
+    ]);
+  });
+
   it("encodes set_reporter with the admin as source", async () => {
     const client = new PlimsollContracts(config);
     const admin = Keypair.random().publicKey();

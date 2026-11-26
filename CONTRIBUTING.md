@@ -13,6 +13,12 @@ npm install
 npm run dev
 ```
 
+In development, the browser console exposes `window.__plimsoll__` with the
+active SDK clients (`sdk.contracts` and `sdk.indexer`), app `config`, and
+`lastResponse`. The latter records the most recently completed SDK call,
+including its client, method, arguments, and response or error. This object is
+not attached outside development mode.
+
 ## Pull request checklist
 
 - [ ] One change per pull request, linked to its issue (`Closes #7`).

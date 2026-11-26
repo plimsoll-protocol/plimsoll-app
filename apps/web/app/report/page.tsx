@@ -3,13 +3,16 @@
 import { useEffect, useState } from "react";
 import {
   ContractCallError,
+  LedgerError,
   Role,
   Tier,
   describeError,
   formatUnits,
+  parseContractErrorCode,
   sha256Hex,
   shortAddress,
   tierLabel,
+  validateDocUri,
 } from "@plimsoll/sdk";
 import { CopyButton } from "@/components/ui";
 import { explorer } from "@/lib/config";
@@ -92,10 +95,12 @@ export default function ReportPage() {
   const selected = assets.find((a) => a.sac === sac);
   const amountCheck = checkAmount(amount, selected?.supply?.amount, selected?.code);
   const preview = amountCheck.kind === "valid" ? amountCheck.preview : null;
+  const docUriCheck = docUri.trim() ? validateDocUri(docUri) : null;
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!address || !tier || amountCheck.kind !== "valid" || preview?.warning) return;
+    if (!docUriCheck?.valid) return;
     try {
       const units = amountCheck.units;
       const asOfSecs = Math.floor(new Date(`${asOf}T00:00:00Z`).getTime() / 1000);
@@ -106,7 +111,7 @@ export default function ReportPage() {
         amount: units,
         asOf: asOfSecs,
         docHash,
-        docUri,
+        docUri: docUriCheck.uri,
       });
       setStatus({ kind: "busy", msg: "Waiting for your signature…" });
       const signed = await signXdr(xdr, address);
@@ -125,7 +130,7 @@ export default function ReportPage() {
     sac &&
     amountCheck.kind === "valid" &&
     !preview?.warning &&
-    docUri &&
+    docUriCheck?.valid &&
     /^[0-9a-f]{64}$/.test(docHash) &&
     status.kind !== "busy";
 
@@ -249,7 +254,14 @@ export default function ReportPage() {
             placeholder="https://…"
             required
             maxLength={256}
+            aria-invalid={docUriCheck !== null && !docUriCheck.valid}
+            aria-describedby={docUriCheck && !docUriCheck.valid ? "doc-uri-error" : undefined}
           />
+          {docUriCheck && !docUriCheck.valid ? (
+            <span className="field-error" id="doc-uri-error" role="alert">
+              {docUriCheck.message}
+            </span>
+          ) : null}
         </label>
         <div>
           <label>
@@ -324,7 +336,30 @@ function noSupplyNote(asset: AssetView | undefined): string {
   return `No supply snapshot for ${asset.code} yet, so there is no ratio to preview. The supply poster records one for each listed asset; the preview appears once it lands.`;
 }
 
-function friendly(e: unknown, fallback: string): string {
-  const code = e instanceof ContractCallError ? e.code : undefined;
-  return (code !== undefined && describeError(code, "ledger")) || fallback;
+export const ERRORS: Record<number, string> = {
+  [LedgerError.NotAStellarAsset]: "That address is not a Stellar Asset Contract.",
+  [LedgerError.AlreadyListed]: "This asset is already listed.",
+  [LedgerError.AssetNotListed]: "This asset is not listed on the coverage ledger.",
+  [LedgerError.NotSupplyPoster]: "This account is not a registered supply poster.",
+  [LedgerError.NotReporter]:
+    "This account is not the issuer and is not a registered auditor or transcriber.",
+  [LedgerError.InvalidAmount]: "Reserves cannot be negative.",
+  [LedgerError.FutureLedger]: "The supply ledger is in the future.",
+  [LedgerError.StaleLedger]: "The supply ledger is not newer than the stored one.",
+  [LedgerError.FutureTimestamp]: "The as-of date is in the future.",
+  [LedgerError.StaleReport]:
+    "There is already a report at this tier with the same or a later as-of date.",
+  [LedgerError.InvalidUri]: "The document URL is empty or longer than 256 characters.",
+  [LedgerError.ImplausibleAmount]:
+    "The amount is outside 0.01% to 10,000% of the current supply and is likely a unit mistake (entering whole units instead of smallest units, or vice versa).",
+  [LedgerError.TooManyReporters]:
+    "This asset already has the maximum of 4 active reporters at this tier.",
+};
+
+export function friendly(e: unknown, fallback: string): string {
+  const code =
+    e instanceof ContractCallError
+      ? e.code
+      : parseContractErrorCode(fallback);
+  return (code !== undefined && ERRORS[code]) || (code !== undefined && describeError(code, "ledger")) || fallback;
 }

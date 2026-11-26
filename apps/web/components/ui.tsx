@@ -96,8 +96,28 @@ export function StatusPill({ status }: { status: CoverageStatus }) {
   return <span className={`pill pill-${status}`}>{STATUS_TEXT[status]}</span>;
 }
 
+const TIER_CLASS: Record<Tier, string> = {
+  1: "pill-tier-1",
+  2: "pill-tier-2",
+  3: "pill-tier-3",
+};
+
+const TIER_TOOLTIP: Record<Tier, string> = {
+  1: "Tier 1 — Transcribed: a third party copied the figure from a public source",
+  2: "Tier 2 — Issuer-signed: the asset issuer attested the reserve directly",
+  3: "Tier 3 — Auditor-signed: an independent auditor verified the reserve",
+};
+
 export function TierPill({ tier }: { tier: Tier }) {
-  return <span className="pill pill-tier">{tierLabel(tier)}</span>;
+  return (
+    <span
+      className={`pill pill-tier ${TIER_CLASS[tier] ?? ""}`}
+      title={TIER_TOOLTIP[tier]}
+      aria-label={TIER_TOOLTIP[tier]}
+    >
+      {tierLabel(tier)}
+    </span>
+  );
 }
 
 /**
