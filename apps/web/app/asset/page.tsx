@@ -59,6 +59,7 @@ import {
   removeWatch,
   requestNotificationPermission,
 } from "@/lib/watchlist";
+import { useAutoRefresh } from "@/lib/refresh";
 
 export default function AssetPage() {
   return (
@@ -76,8 +77,6 @@ function AssetDetail() {
 function AssetContent({ query }: { query: ReturnType<typeof assetFromSearch> }) {
   const sac = query.ok ? query.sac : "";
   const [asset, setAsset] = useState<AssetView | null | undefined>(undefined);
-  const [error, setError] = useState<string | null>(null);
-  const [now, setNow] = useState(nowSecs());
   const [names, setNames] = useState<ReadonlyMap<string, string>>(new Map());
   const [intervalValue, setIntervalValue] = useRefreshIntervalSetting();
   const cancelRef = useRef<(() => void) | null>(null);
@@ -131,7 +130,24 @@ function AssetContent({ query }: { query: ReturnType<typeof assetFromSearch> }) 
       .catch((e: unknown) => {
         if (!cancelled) setError(e instanceof Error ? e.message : String(e));
       });
+  const load = useCallback(async () => {
+    if (!sac) return;
+    const a = await loadAsset(sac);
+    setAsset(a);
+    if (!a) return;
+    const addresses = Object.values(a.reports)
+      .filter((r): r is ReportView => r !== undefined)
+      .map((r) => r.reporter);
+    if (a.supply) addresses.push(a.supply.poster);
+    // Names are an improvement on the addresses already shown, not a
+    // precondition for them, so a failed lookup leaves the page as it is.
+    try {
+      setNames(await loadReporterNames(addresses));
+    } catch (e: unknown) {
+      console.warn("Could not load reporter names", e);
+    }
   }, [sac]);
+  const { now, refreshing, error, refresh } = useAutoRefresh(load);
 
   const { refresh } = useAutoRefresh(fetch, intervalValue, sac);
 
@@ -154,7 +170,7 @@ function AssetContent({ query }: { query: ReturnType<typeof assetFromSearch> }) 
       </section>
     );
   }
-  if (error)
+  if (error && asset === undefined)
     return (
       <p className="notice notice-bad" role="alert">
         Could not load this asset: {error}
@@ -190,6 +206,11 @@ function AssetContent({ query }: { query: ReturnType<typeof assetFromSearch> }) 
           { label: asset.code },
         ]}
       />
+      {error ? (
+        <p className="notice notice-bad mt" role="status">
+          Could not refresh this asset: {error}
+        </p>
+      ) : null}
       <p className="sub">
         <Link href={`/asset/history/?sac=${asset.sac}`}>History</Link>
       </p>
@@ -233,6 +254,16 @@ function AssetContent({ query }: { query: ReturnType<typeof assetFromSearch> }) 
           >
             Share ↗
           </Link>
+          <button
+            type="button"
+            className="secondary"
+            onClick={refresh}
+            disabled={refreshing}
+            aria-label={`Refresh ${asset.code}`}
+            style={{ padding: "3px 10px", fontSize: "0.82rem" }}
+          >
+            {refreshing ? "Refreshing…" : "Refresh"}
+          </button>
         </div>
       </div>
 

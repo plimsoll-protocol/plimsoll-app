@@ -46,7 +46,20 @@ export default function Home() {
       .catch((err: unknown) => {
         if (!cancelled) setError(err instanceof Error ? err.message : String(err));
       });
+import { useCallback, useState } from "react";
+import { AssetCard } from "@/components/AssetCard";
+import { Skeleton } from "@/components/ui";
+import { config } from "@/lib/config";
+import { loadAssets, type AssetView } from "@/lib/data";
+import { useAutoRefresh } from "@/lib/refresh";
+
+export default function Home() {
+  const [assets, setAssets] = useState<AssetView[] | null>(null);
+  const load = useCallback(async () => {
+    const list = await loadAssets();
+    setAssets(list);
   }, []);
+  const { now, refreshing, error, refresh } = useAutoRefresh(load);
 
   const { refresh } = useAutoRefresh(fetch, intervalValue);
   const handleSearch = (value: string) => {
@@ -78,6 +91,7 @@ export default function Home() {
       <div className="spread mt">
         <h2 style={{ margin: 0 }}>Listed assets</h2>
         <div className="row" style={{ gap: 12, alignItems: "center" }}>
+        <div className="row">
           <span className="sub">
             {source === "indexer"
               ? "Read from the Plimsoll indexer"
@@ -90,6 +104,16 @@ export default function Home() {
             onChange={setIntervalValue}
             onRefresh={refresh}
           />
+          <button
+            type="button"
+            className="secondary"
+            onClick={refresh}
+            disabled={refreshing}
+            aria-label="Refresh listed assets"
+            style={{ padding: "3px 10px", fontSize: "0.82rem" }}
+          >
+            {refreshing ? "Refreshing…" : "Refresh"}
+          </button>
         </div>
       </div>
 
