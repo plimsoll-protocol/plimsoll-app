@@ -15,6 +15,7 @@ function indexerCoverageStatus(
   if (ages.supply > maxAgeSeconds) return "stale";
   return bps >= 10_000 ? "covered" : "under";
 }
+import { streamReports, type ReportStream, type StreamReportsOptions } from "./report-stream";
 
 /**
  * Where a figure came from. "event" means it was decoded from a contract
@@ -248,6 +249,23 @@ export class IndexerClient {
   async reporters(opts?: RequestOptions): Promise<IndexerReporter[]> {
     const body = await this.get<{ reporters: IndexerReporter[] }>(`/v1/reporters`, opts);
     return body.reporters;
+  }
+
+  /**
+   * Live reserve reports for one asset, as an async iterable.
+   *
+   * ```ts
+   * for await (const report of indexer.streamReports(sac)) {
+   *   console.log(report.tier, report.amount);
+   * }
+   * ```
+   *
+   * Leaving the loop (`break`, `return()`, an `AbortSignal`) closes the
+   * underlying `EventSource`. Needs an indexer that serves the SSE events
+   * stream at `/v1/assets/{sac}/events`.
+   */
+  streamReports(asset: string, options?: StreamReportsOptions): ReportStream {
+    return streamReports(this.base, asset, options);
   }
 
   network(opts?: RequestOptions): Promise<IndexerNetwork> {

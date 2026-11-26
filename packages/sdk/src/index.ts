@@ -4,6 +4,7 @@ export * from "./format";
 export * from "./contract";
 export * from "./errors";
 export * from "./events";
+export * from "./report-stream";
 export * from "./vault";
 export * from "./indexer";
 export * from "./verify";

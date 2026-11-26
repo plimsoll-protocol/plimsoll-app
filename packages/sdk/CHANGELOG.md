@@ -15,6 +15,9 @@ format of [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   `"connecting"`, `"live"` and `"paused"`, so a caller can say that live
   updates are paused and clear that when the stream returns. A connection that
   opens now resets the reconnect back-off.
+- `IndexerClient.streamReports(asset, options)` and the standalone
+  `streamReports(indexerBase, asset, options)`: an async iterable over the
+  indexer's SSE report stream that closes its `EventSource` when the loop exits.
 
 ## [0.1.0] - 2026-11-24
 

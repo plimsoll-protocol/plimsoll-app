@@ -79,6 +79,18 @@ for (const asset of await indexer.listAssets(Tier.IssuerSigned)) {
 argument. A non-2xx response throws `IndexerError`, which carries the HTTP
 `status`.
 
+### Stream new reports
+
+`indexer.streamReports(sac)` returns an async iterable of new reserve reports
+for one asset, fed by the indexer's server-sent events, so a `for await` loop
+can follow an asset live. Leaving the loop (`break`, `return()`, or an
+`AbortSignal` passed as `{ signal }`) closes the underlying `EventSource`. A
+dropped connection reconnects on its own with back-off. Reports that arrive
+while your loop is busy are kept in order, up to `maxBuffered` (default 1 000);
+past that the iterator throws `ReportStreamOverflowError` instead of dropping
+reports silently. The stream needs an indexer that serves
+`GET /v1/assets/{sac}/events`.
+
 ## Verify a figure
 
 Every supply snapshot records a sha256 of the per-bucket breakdown it was
