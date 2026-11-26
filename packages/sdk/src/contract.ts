@@ -388,6 +388,20 @@ export class PlimsollContracts extends ContractClient {
     return this.prepare(admin, this.registry.call("revoke", addr(reporter)), opts);
   }
 
+  /** Prepare a dispute_report transaction on the coverage ledger. */
+  async prepareDisputeReport(
+    disputer: string,
+    sac: string,
+    tier: Tier,
+    opts?: PrepareOptions,
+  ): Promise<string> {
+    return this.prepare(
+      disputer,
+      this.ledger.call("dispute_report", addr(disputer), addr(sac), u32(tier)),
+      opts,
+    );
+  }
+
   /** Submit a signed transaction and wait for it to land. Returns the hash. */
   async submit(signedXdr: string, opts: SubmitOptions = {}): Promise<string> {
     const tx = TransactionBuilder.fromXDR(signedXdr, this.network.networkPassphrase);

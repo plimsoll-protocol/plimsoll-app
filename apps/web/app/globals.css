@@ -859,6 +859,12 @@ button.secondary,
   background: transparent;
   color: var(--ink);
 }
+button.danger,
+.button.danger {
+  background: var(--bad);
+  border-color: var(--bad);
+  color: #fff;
+}
 button:disabled {
   opacity: 0.5;
   cursor: not-allowed;
@@ -1115,6 +1121,45 @@ details.reconcile > summary .eyebrow {
 }
 .wallet-dialog-foot {
   margin: 14px 0 0;
+}
+
+/* dispute confirm dialog */
+.dispute-dialog {
+  width: min(500px, calc(100vw - 32px));
+  max-height: min(640px, calc(100vh - 48px));
+  margin: auto;
+  padding: 0;
+  overflow-y: auto;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--ink);
+  box-shadow: 0 24px 64px rgb(0 0 0 / 35%);
+}
+.dispute-dialog::backdrop {
+  background: rgb(15 29 43 / 55%);
+}
+.dispute-dialog-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 18px 20px 0;
+}
+.dispute-dialog-head h2 {
+  margin: 0;
+  font-size: 1.25rem;
+}
+.dispute-dialog-close {
+  border: 0;
+  background: transparent;
+  color: var(--ink-2);
+  padding: 6px 8px;
+  font-size: 1.1rem;
+  cursor: pointer;
+}
+.dispute-dialog-body {
+  padding: 14px 20px 20px;
 }
 
 pre {

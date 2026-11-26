@@ -24,6 +24,7 @@ import {
 import { Breadcrumb } from "@/components/Breadcrumb";
 import {
   CopyButton,
+  DisputeConfirmModal,
   Gauge,
   Skeleton,
   Stat,
@@ -33,6 +34,7 @@ import {
   nowSecs,
   ratioText,
   statusOf,
+  type DisputedReportDetails,
 } from "@/components/ui";
 import { LiveUpdates } from "@/components/LiveUpdates";
 import { assetFromSearch } from "@/lib/asset-query";
@@ -40,6 +42,7 @@ import { config, explorer } from "@/lib/config";
 import { connectWallet, connectedWalletAddress, signXdr } from "@/lib/wallet";
 import { embedCode } from "@/lib/badge";
 import { RECONCILE_DOCS, reconcileSummary, reconcileTime } from "@/lib/reconcile";
+import { connectWallet, signXdr } from "@/lib/wallet";
 import {
   contracts,
   indexer,
@@ -82,6 +85,32 @@ function AssetContent({ query }: { query: ReturnType<typeof assetFromSearch> }) 
   const [intervalValue, setIntervalValue] = useRefreshIntervalSetting();
   const cancelRef = useRef<(() => void) | null>(null);
   const [history, setHistory] = useState<HistoryPoint[] | null>(null);
+  const [disputeReport, setDisputeReport] = useState<DisputedReportDetails | null>(null);
+  const [disputeSubmitting, setDisputeSubmitting] = useState(false);
+  const [disputeError, setDisputeError] = useState<string | null>(null);
+  const [disputeNotice, setDisputeNotice] = useState<string | null>(null);
+
+  const handleConfirmDispute = async () => {
+    if (!disputeReport) return;
+    setDisputeSubmitting(true);
+    setDisputeError(null);
+    try {
+      const source = await connectWallet();
+      const xdr = await contracts.prepareDisputeReport(
+        source,
+        disputeReport.sac ?? asset?.sac ?? sac,
+        disputeReport.tier ?? Tier.Transcribed,
+      );
+      const signed = await signXdr(xdr, source);
+      await contracts.submit(signed);
+      setDisputeNotice("Dispute submitted successfully.");
+      setDisputeReport(null);
+    } catch (err) {
+      setDisputeError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setDisputeSubmitting(false);
+    }
+  };
 
   useEffect(() => {
     if (!sac || !indexer) return;
@@ -367,6 +396,7 @@ function AssetContent({ query }: { query: ReturnType<typeof assetFromSearch> }) 
               <th>Signed by</th>
               <th>Document</th>
               {watcher ? <th scope="col">Actions</th> : null}
+              <th>Action</th>
             </tr>
           </thead>
           <tbody>
@@ -381,11 +411,25 @@ function AssetContent({ query }: { query: ReturnType<typeof assetFromSearch> }) 
                   now={now}
                   name={names.get(r.reporter)}
                   onDispute={watcher && asset.sac === sac ? () => setSelected(r) : undefined}
+                  onDispute={(rep, bps) => {
+                    setDisputeNotice(null);
+                    setDisputeError(null);
+                    setDisputeReport({
+                      reporter: rep.reporter,
+                      reporterName: names.get(rep.reporter),
+                      asOf: rep.asOf,
+                      bps,
+                      tier: rep.tier,
+                      amount: rep.amount,
+                      sac: asset.sac,
+                    });
+                  }}
                 />
               ) : (
                 <tr key={tier}>
                   <td>{tierLabel(tier)}</td>
                   <td colSpan={watcher ? 6 : 5} className="sub">
+                  <td colSpan={7} className="sub">
                     No report at this tier.
                   </td>
                 </tr>
@@ -461,6 +505,25 @@ function AssetContent({ query }: { query: ReturnType<typeof assetFromSearch> }) 
           </div>
         ) : null}
       </div>
+      {disputeNotice ? (
+        <p className="notice notice-ok mt" role="status">
+          {disputeNotice}
+        </p>
+      ) : null}
+
+      <DisputeConfirmModal
+        isOpen={disputeReport !== null}
+        report={disputeReport}
+        onConfirm={handleConfirmDispute}
+        onCancel={() => {
+          if (!disputeSubmitting) {
+            setDisputeReport(null);
+            setDisputeError(null);
+          }
+        }}
+        submitting={disputeSubmitting}
+        error={disputeError}
+      />
 
       {asset.supply ? (
         <SupplySection
@@ -519,9 +582,11 @@ function ReportRow({
   now: number;
   name?: string;
   onDispute?: () => void;
+  onDispute?: (report: ReportView, bps: number) => void;
 }) {
+  const bps = supply && supply > 0n ? Number((report.amount * 10_000n) / supply) : 0;
   const covers =
-    supply && supply > 0n ? bpsToPercent(Number((report.amount * 10_000n) / supply)) : "—";
+    supply && supply > 0n ? bpsToPercent(bps) : "—";
   return (
     <tr>
       <td>
@@ -585,6 +650,17 @@ function ReportRow({
           </button>
         </td>
       ) : null}
+      <td>
+        <button
+          type="button"
+          className="secondary"
+          style={{ padding: "2px 8px", fontSize: "0.8rem" }}
+          onClick={() => onDispute?.(report, bps)}
+          title="Dispute this reserve report"
+        >
+          Dispute
+        </button>
+      </td>
     </tr>
   );
 }
