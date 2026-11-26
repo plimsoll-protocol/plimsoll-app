@@ -47,6 +47,7 @@ import { EXTERNAL_REL, config, explorer } from "@/lib/config";
 import { embedCode } from "@/lib/badge";
 import { RECONCILE_DOCS, reconcileSummary, reconcileTime } from "@/lib/reconcile";
 import { connectWallet, signXdr } from "@/lib/wallet";
+import { setLastAsset } from "@/lib/session";
 import {
   contracts,
   indexer,
@@ -310,6 +311,13 @@ function AssetContent({ query }: { query: ReturnType<typeof assetFromSearch> }) 
   }, [title]);
 
   useEffect(() => () => titleManager.current?.restore(), []);
+
+  // Remember the last asset opened so the homepage can restore it after a
+  // reload. Every navigation path that opens an asset passes through this
+  // page, so storing here keeps the value consistent.
+  useEffect(() => {
+    if (sac) setLastAsset(sac);
+  }, [sac]);
 
   if (!query.ok) {
     return (
