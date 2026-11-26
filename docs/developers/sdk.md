@@ -28,6 +28,7 @@ formatUnits(cov!.reserves);    // "1,020,000"
 | --- | --- |
 | `getAsset(sac)` | `AssetRecord \| null` |
 | `getSupply(sac)` | `SupplySnapshot \| null` |
+| `getAssetMetadata(sac)` | `AssetMeta` (`code`, `issuer`, `displayName`); reads `asset_metadata` and falls back to the SAC's own `name()` on a ledger without it |
 | `getReport(sac, tier)` | `ReserveReport \| null` |
 | `getReports(sac)` | `ReserveReport[]`, every tier's latest report in one call |
 | `coverage(sac, minTier)` | `Coverage \| null` |

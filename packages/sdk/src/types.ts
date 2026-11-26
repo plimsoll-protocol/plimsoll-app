@@ -28,6 +28,22 @@ export interface AssetRecord {
   listedAt: number;
 }
 
+/**
+ * How an asset is named for display. Returned by
+ * {@link PlimsollContracts.getAssetMetadata}.
+ */
+export interface AssetMeta {
+  /** Asset code, e.g. `"USDC"`. `"XLM"` for the native asset. */
+  code: string;
+  /** Issuer account (G…). Empty string for the native asset, which has no issuer. */
+  issuer: string;
+  /**
+   * Human-readable name. The coverage ledger's `asset_metadata` value when the
+   * contract provides one; otherwise the asset code.
+   */
+  displayName: string;
+}
+
 export interface SupplySnapshot {
   /** Smallest units (7 decimals for classic assets). */
   amount: bigint;

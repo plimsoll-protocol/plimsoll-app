@@ -6,6 +6,7 @@ import {
   Contract,
   Keypair,
   Operation,
+  StrKey,
   TransactionBuilder,
   nativeToScVal,
   rpc,
@@ -16,6 +17,7 @@ import { Buffer } from "buffer";
 import { RegistryError, describeError, parseContractErrorCode } from "./errors";
 import { TESTNET } from "./networks";
 import type {
+  AssetMeta,
   AssetRecord,
   Coverage,
   NetworkConfig,
@@ -142,6 +144,40 @@ export function decodeCoverage(raw: Raw): Coverage {
     supplyTimestamp: num(raw.supply_timestamp),
     reportAsOf: num(raw.report_as_of),
   };
+}
+
+/**
+ * Decodes the coverage ledger's `asset_metadata` struct. A blank
+ * `display_name` falls back to the code, so the result always has a name.
+ */
+export function decodeAssetMeta(raw: Raw): AssetMeta {
+  const code = String(raw.code);
+  const displayName = raw.display_name == null ? "" : String(raw.display_name).trim();
+  return { code, issuer: String(raw.issuer), displayName: displayName || code };
+}
+
+/**
+ * Parses what a Stellar Asset Contract's `name()` returns: `"CODE:ISSUER"`
+ * for a classic asset, `"native"` for XLM. Throws on anything else.
+ */
+export function parseSacName(name: string): Pick<AssetMeta, "code" | "issuer"> {
+  if (name === "native") return { code: "XLM", issuer: "" };
+  const m = /^([a-zA-Z0-9]{1,12}):(G[A-Z2-7]{55})$/.exec(name);
+  if (!m || !m[1] || !m[2] || !StrKey.isValidEd25519PublicKey(m[2])) {
+    throw new Error(`Not a Stellar Asset Contract name: ${JSON.stringify(name)}`);
+  }
+  return { code: m[1], issuer: m[2] };
+}
+
+/**
+ * True when a simulation failed because the contract has no function by that
+ * name, as opposed to the function running and returning an error. This is
+ * how the SDK tells a contract that predates a view function from one that
+ * rejected the call.
+ */
+export function isMissingFunctionError(err: unknown): boolean {
+  if (!(err instanceof ContractCallError) || err.code !== undefined) return false;
+  return /non-existent contract function|Error\(WasmVm, MissingValue\)/.test(err.detail);
 }
 
 export function decodeReporter(raw: Raw): ReporterInfo {
@@ -320,6 +356,51 @@ export class PlimsollContracts extends ContractClient {
       u32(minTier),
     ]);
     return v === true;
+  }
+
+  /**
+   * Code, issuer and display name of an asset, for labelling it in a UI.
+   *
+   * Asks the coverage ledger's `asset_metadata(sac)` view first. A ledger
+   * deployed before that function existed has no such entry point; then the
+   * name is read from the Stellar Asset Contract itself, whose `name()` is
+   * `"CODE:ISSUER"`, and `displayName` is the code. The parsed code and issuer
+   * are checked against the address they were read from, so a contract that
+   * is not the SAC it claims to be is refused rather than mislabelled.
+   *
+   * Any other failure, such as a contract error from `asset_metadata`, is
+   * thrown as {@link ContractCallError}, not masked by the fallback.
+   *
+   * @param sac The asset's Stellar Asset Contract address (C…).
+   * @returns `{ code, issuer, displayName }`; `issuer` is `""` for native XLM.
+   * @throws {ContractCallError} when a read fails for a reason other than a missing function.
+   * @throws {Error} when the fallback finds a contract that is not a Stellar Asset Contract.
+   *
+   * @example
+   * ```ts
+   * const meta = await plimsoll.getAssetMetadata(TESTNET.assets.PUSD!.sac);
+   * console.log(`${meta.displayName} (${meta.code}) issued by ${meta.issuer}`);
+   * ```
+   */
+  async getAssetMetadata(sac: string): Promise<AssetMeta> {
+    try {
+      const v = await this.read(this.ledger, "asset_metadata", [addr(sac)]);
+      if (v != null) return decodeAssetMeta(v as Raw);
+    } catch (err) {
+      if (!isMissingFunctionError(err)) throw err;
+    }
+    return this.assetMetadataFromSac(sac);
+  }
+
+  /** The fallback for {@link getAssetMetadata}: the SAC's own `name()`. */
+  private async assetMetadataFromSac(sac: string): Promise<AssetMeta> {
+    const name = await this.read(new Contract(sac), "name", []);
+    const { code, issuer } = parseSacName(String(name));
+    const asset = issuer ? new Asset(code, issuer) : Asset.native();
+    if (asset.contractId(this.network.networkPassphrase) !== sac) {
+      throw new Error(`${sac} is not the Stellar Asset Contract for ${code}:${issuer || "native"}`);
+    }
+    return { code, issuer, displayName: code };
   }
 
   async getReporter(address: string): Promise<ReporterInfo | null> {

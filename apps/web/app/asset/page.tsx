@@ -16,6 +16,7 @@ import {
   parseBreakdown,
   sha256Hex,
   shortAddress,
+  subscribeCoverageEvents,
   tierLabel,
   type IndexerReconcileStatus,
   type SupplyBreakdown,
@@ -64,6 +65,32 @@ import {
 } from "@/lib/watchlist";
 import { useAutoRefresh } from "@/lib/refresh";
 import { logger } from "@/lib/logger";
+import {
+  confirmedIn,
+  loadPending,
+  onPendingChange,
+  pendingFor,
+  removePending,
+  reportFromEvent,
+  toView,
+  withReport,
+  type PendingReport,
+} from "@/lib/pending-reports";
+
+/** How often to re-read the asset while a report is pending, in case an SSE event was missed. */
+const PENDING_POLL_MS = 15_000;
+
+/**
+ * A fresh read merged with what the page already shows: a report the page
+ * took from the SSE stream stays until the source it reads from catches up,
+ * rather than flicking back to the older one.
+ */
+function mergeFresh(prev: AssetView | null | undefined, fresh: AssetView): AssetView {
+  if (!prev || prev.sac !== fresh.sac) return fresh;
+  return Object.values(prev.reports)
+    .filter((r): r is ReportView => r !== undefined)
+    .reduce((a, r) => withReport(a, r), fresh);
+}
 
 export default function AssetPage() {
   return (
@@ -111,6 +138,7 @@ function AssetContent({ query }: { query: ReturnType<typeof assetFromSearch> }) 
       setDisputeSubmitting(false);
     }
   };
+  const [pending, setPending] = useState<PendingReport[]>([]);
 
   useEffect(() => {
     if (!sac || !indexer) return;
@@ -182,6 +210,53 @@ function AssetContent({ query }: { query: ReturnType<typeof assetFromSearch> }) 
   const { now, refreshing, error, refresh } = useAutoRefresh(load);
 
   const { refresh } = useAutoRefresh(fetch, intervalValue, sac);
+
+  // Reports this browser has signed for the asset but not yet seen confirmed.
+  useEffect(() => {
+    if (!sac) return;
+    const sync = () => setPending(pendingFor(loadPending(), sac));
+    sync();
+    return onPendingChange(sync);
+  }, [sac]);
+
+  // A pending report that the loaded data already contains is confirmed.
+  useEffect(() => {
+    if (!asset || pending.length === 0) return;
+    removePending(confirmedIn(pending, asset));
+  }, [asset, pending]);
+
+  // A quiet re-read: a failure leaves the page as it is.
+  const refresh = useCallback(() => {
+    if (!sac) return;
+    loadAsset(sac)
+      .then((fresh) => {
+        if (fresh) setAsset((prev) => mergeFresh(prev, fresh));
+        setNow(nowSecs());
+      })
+      .catch((e: unknown) => console.warn("Could not refresh the asset", e));
+  }, [sac]);
+
+  // While something is pending, listen for the indexer's event and swap the
+  // confirmed report in as soon as it arrives. A poll backs the stream up, in
+  // case the event landed before the stream opened, or there is no indexer.
+  const waiting = pending.length > 0;
+  useEffect(() => {
+    if (!sac || !waiting) return;
+    const sub = config.indexerUrl
+      ? subscribeCoverageEvents(config.indexerUrl.replace(/\/+$/, ""), sac, (ev) => {
+          if (ev.kind !== "report_posted") return;
+          const report = reportFromEvent(ev);
+          if (report) setAsset((prev) => (prev ? withReport(prev, report) : prev));
+          // Coverage and supply figures move with the report: read them again.
+          refresh();
+        })
+      : null;
+    const poll = window.setInterval(refresh, PENDING_POLL_MS);
+    return () => {
+      sub?.unsubscribe();
+      window.clearInterval(poll);
+    };
+  }, [sac, waiting, refresh]);
 
   if (!query.ok) {
     return (
@@ -385,6 +460,11 @@ function AssetContent({ query }: { query: ReturnType<typeof assetFromSearch> }) 
         Latest report per signer tier. Coverage uses the freshest one. Each report carries the
         SHA-256 of its source document, so you can check the file has not changed.
       </p>
+      <p className="sub" aria-live="polite">
+        {pending.length > 0
+          ? `${pending.length === 1 ? "1 report you posted is" : `${pending.length} reports you posted are`} waiting for confirmation.`
+          : null}
+      </p>
       <div className="table-wrap">
         <table>
           <thead>
@@ -400,7 +480,7 @@ function AssetContent({ query }: { query: ReturnType<typeof assetFromSearch> }) 
             </tr>
           </thead>
           <tbody>
-            {tiers.map((tier) => {
+            {tiers.flatMap((tier) => {
               const r = asset.reports[tier];
               return r ? (
                 <ReportRow
@@ -434,6 +514,43 @@ function AssetContent({ query }: { query: ReturnType<typeof assetFromSearch> }) 
                   </td>
                 </tr>
               );
+              // Newest pending report first, above the confirmed one it will replace.
+              const rows = pendingFor(pending, asset.sac)
+                .filter((p) => p.tier === tier)
+                .reverse()
+                .map((p) => (
+                  <ReportRow
+                    key={`pending-${p.txHash}`}
+                    report={toView(p)}
+                    pending
+                    supply={asset.supply?.amount}
+                    issuer={asset.issuer}
+                    now={now}
+                    name={names.get(p.reporter)}
+                  />
+                ));
+              if (r) {
+                rows.push(
+                  <ReportRow
+                    key={tier}
+                    report={r}
+                    supply={asset.supply?.amount}
+                    issuer={asset.issuer}
+                    now={now}
+                    name={names.get(r.reporter)}
+                  />,
+                );
+              } else if (rows.length === 0) {
+                rows.push(
+                  <tr key={tier}>
+                    <td>{tierLabel(tier)}</td>
+                    <td colSpan={5} className="sub">
+                      No report at this tier.
+                    </td>
+                  </tr>,
+                );
+              }
+              return rows;
             })}
           </tbody>
         </table>
@@ -575,6 +692,7 @@ function ReportRow({
   now,
   name,
   onDispute,
+  pending = false,
 }: {
   report: ReportView;
   supply: bigint | undefined;
@@ -583,14 +701,22 @@ function ReportRow({
   name?: string;
   onDispute?: () => void;
   onDispute?: (report: ReportView, bps: number) => void;
+  /** Signed by this browser, not yet confirmed by the indexer. */
+  pending?: boolean;
 }) {
   const bps = supply && supply > 0n ? Number((report.amount * 10_000n) / supply) : 0;
   const covers =
     supply && supply > 0n ? bpsToPercent(bps) : "—";
   return (
-    <tr>
+    <tr className={pending ? "row-pending" : undefined}>
       <td>
         <TierPill tier={report.tier} />
+        {pending ? (
+          <div>
+            <span className="pill pill-pending">Pending</span>
+            <div className="sub">waiting for confirmation</div>
+          </div>
+        ) : null}
       </td>
       <td className="num">{formatUnits(report.amount)}</td>
       <td className="num">{covers}</td>

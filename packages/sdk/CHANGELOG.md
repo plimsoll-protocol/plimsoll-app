@@ -20,6 +20,11 @@ format of [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   indexer's SSE report stream that closes its `EventSource` when the loop exits.
 - `IndexerClient.getReportBySeq(asset, seq)`: one historical report by sequence
   number, `null` when the seq is unknown.
+- `PlimsollContracts.getAssetMetadata(sac)` returns `{ code, issuer, displayName }`
+  from the coverage ledger's `asset_metadata` view, falling back to the
+  Stellar Asset Contract's `name()` on a ledger deployed without it.
+- `AssetMeta` type and the `decodeAssetMeta`, `parseSacName` and
+  `isMissingFunctionError` helpers.
 
 ## [0.1.0] - 2026-11-24
 

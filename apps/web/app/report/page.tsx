@@ -15,15 +15,17 @@ import {
   validateDocUri,
 } from "@plimsoll/sdk";
 import { CopyButton } from "@/components/ui";
-import { explorer } from "@/lib/config";
+import Link from "next/link";
+import { config, explorer } from "@/lib/config";
 import { contracts, loadAssets, type AssetView } from "@/lib/data";
+import { addPending, removePending, txHashOf } from "@/lib/pending-reports";
 import { checkAmount } from "@/lib/report-preview";
 import { WalletError, connectWallet, signXdr } from "@/lib/wallet";
 
 type Status =
   | { kind: "idle" }
   | { kind: "busy"; msg: string }
-  | { kind: "ok"; hash: string; tier: Tier }
+  | { kind: "ok"; hash: string; tier: Tier; sac: string }
   | { kind: "err"; msg: string };
 
 export default function ReportPage() {
@@ -141,6 +143,9 @@ export default function ReportPage() {
   const confirmSign = async () => {
     if (!address || !tier || amountCheck.kind !== "valid" || preview?.warning) return;
     setModalOpen(false);
+    // Set once the wallet signs, so a failure after that point can take the
+    // optimistic row back off the asset page.
+    let pendingHash: string | null = null;
     try {
       const units = amountCheck.units;
       const asOfSecs = Math.floor(new Date(`${asOf}T00:00:00Z`).getTime() / 1000);
@@ -155,10 +160,24 @@ export default function ReportPage() {
       });
       setStatus({ kind: "busy", msg: "Waiting for your signature…" });
       const signed = await signXdr(xdr, address);
+      pendingHash = txHashOf(signed, config.network.networkPassphrase);
+      // Show the report on the asset page now, marked pending; the asset page
+      // swaps it for the confirmed row when the indexer reports the event.
+      addPending({
+        txHash: pendingHash,
+        sac,
+        tier,
+        amount: units.toString(),
+        asOf: asOfSecs,
+        reporter: address,
+        docHash,
+        docUri,
+      });
       setStatus({ kind: "busy", msg: "Submitting…" });
       const hash = await contracts.submit(signed);
-      setStatus({ kind: "ok", hash, tier });
+      setStatus({ kind: "ok", hash, tier, sac });
     } catch (err) {
+      if (pendingHash) removePending([pendingHash]);
       const msg = err instanceof WalletError || err instanceof Error ? err.message : String(err);
       setStatus({ kind: "err", msg: friendly(err, msg) });
     }
@@ -460,8 +479,9 @@ export default function ReportPage() {
             <a href={explorer.tx(status.hash)} target="_blank" rel="noreferrer">
               View transaction
             </a>
-            . <CopyButton value={status.hash} label="transaction hash" /> The dashboard updates once
-            the indexer picks up the event.
+            . <CopyButton value={status.hash} label="transaction hash" /> The{" "}
+            <Link href={`/asset/?sac=${status.sac}`}>asset page</Link> shows it as pending until the
+            indexer picks up the event.
           </p>
         ) : null}
       </div>
