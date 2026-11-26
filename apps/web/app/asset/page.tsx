@@ -39,6 +39,7 @@ import {
 } from "@/components/ui";
 import { LiveUpdates } from "@/components/LiveUpdates";
 import { assetFromSearch } from "@/lib/asset-query";
+import { AssetTitleManager, formatAssetTitle } from "@/lib/asset-title";
 import { config, explorer } from "@/lib/config";
 import { connectWallet, connectedWalletAddress, signXdr } from "@/lib/wallet";
 import { embedCode } from "@/lib/badge";
@@ -162,6 +163,33 @@ function AssetContent({ query }: { query: ReturnType<typeof assetFromSearch> }) 
   }, [sac]);
 
   const fetch = useCallback(() => {
+  const [loadedAsset, setLoadedAsset] = useState<{
+    sac: string;
+    asset: AssetView | null;
+  } | null>(null);
+  const [error, setError] = useState<{ sac: string; message: string } | null>(null);
+  const [now, setNow] = useState(nowSecs());
+  const [names, setNames] = useState<ReadonlyMap<string, string>>(new Map());
+  const titleManager = useRef<AssetTitleManager | null>(null);
+  const currentAsset = loadedAsset?.sac === sac ? loadedAsset.asset : undefined;
+  const currentCoverage = currentAsset?.coverage;
+  const currentError = error?.sac === sac ? error.message : null;
+  const title =
+    query.ok && !currentError && currentAsset && currentCoverage
+      ? formatAssetTitle(
+          currentAsset.code,
+          currentCoverage.bps,
+          statusOf(
+            currentCoverage.bps,
+            currentCoverage.reportAsOf,
+            currentCoverage.supplyPostedAt,
+            now,
+          ),
+        )
+      : null;
+
+  useEffect(() => {
+    let cancelled = false;
     if (!sac) return;
     if (cancelRef.current) cancelRef.current();
     let cancelled = false;
@@ -172,6 +200,7 @@ function AssetContent({ query }: { query: ReturnType<typeof assetFromSearch> }) 
       .then((a) => {
         if (cancelled) return;
         setAsset(a);
+        setLoadedAsset({ sac, asset: a });
         setNow(nowSecs());
         setError(null);
         if (!a) return;
@@ -206,6 +235,21 @@ function AssetContent({ query }: { query: ReturnType<typeof assetFromSearch> }) 
     } catch (e: unknown) {
       console.warn("Could not load reporter names", e);
     }
+          .then((loadedNames) => {
+            if (!cancelled) setNames(loadedNames);
+          })
+          .catch((e: unknown) => {
+            if (!cancelled) console.warn("Could not load reporter names", e);
+          });
+      })
+      .catch((e: unknown) => {
+        if (!cancelled) {
+          setError({ sac, message: e instanceof Error ? e.message : String(e) });
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
   }, [sac]);
   const { now, refreshing, error, refresh } = useAutoRefresh(load);
 
@@ -258,6 +302,13 @@ function AssetContent({ query }: { query: ReturnType<typeof assetFromSearch> }) 
     };
   }, [sac, waiting, refresh]);
 
+  useEffect(() => {
+    titleManager.current ??= new AssetTitleManager(document);
+    titleManager.current.update(title);
+  }, [title]);
+
+  useEffect(() => () => titleManager.current?.restore(), []);
+
   if (!query.ok) {
     return (
       <section className="card mt" aria-labelledby="asset-query-heading">
@@ -278,12 +329,13 @@ function AssetContent({ query }: { query: ReturnType<typeof assetFromSearch> }) 
     );
   }
   if (error && asset === undefined)
+  if (currentError)
     return (
       <p className="notice notice-bad" role="alert">
-        Could not load this asset: {error}
+        Could not load this asset: {currentError}
       </p>
     );
-  if (asset === undefined) {
+  if (currentAsset === undefined) {
     return (
       <div style={{ display: "grid", gap: 14 }}>
         <Skeleton height={40} width="30%" />
@@ -292,7 +344,7 @@ function AssetContent({ query }: { query: ReturnType<typeof assetFromSearch> }) 
       </div>
     );
   }
-  if (asset === null) {
+  if (currentAsset === null) {
     return (
       <p className="notice notice-info">
         This asset is not listed on the coverage ledger. <Link href="/list/">List it</Link>.
@@ -300,6 +352,7 @@ function AssetContent({ query }: { query: ReturnType<typeof assetFromSearch> }) 
     );
   }
 
+  const asset = currentAsset;
   const c = asset.coverage;
   const status = statusOf(c?.bps, c?.reportAsOf, c?.supplyPostedAt, now);
   const tiers = [Tier.AuditorSigned, Tier.IssuerSigned, Tier.Transcribed];
