@@ -5,6 +5,17 @@ import { useCallback, useRef, useState } from "react";
 import { useEffect, useRef, useState } from "react";
 import { AssetCard } from "@/components/AssetCard";
 import { CoverageLegend, Skeleton, nowSecs } from "@/components/ui";
+import { useRouter, useSearchParams } from "next/navigation";
+import { Suspense, useEffect, useState } from "react";
+import { AssetCard } from "@/components/AssetCard";
+import { Skeleton, nowSecs } from "@/components/ui";
+import {
+  MAX_COMPARE,
+  COMPARE_PARAM,
+  comparisonHref,
+  parseSelection,
+  toggleSelection,
+} from "@/lib/compare";
 import { config } from "@/lib/config";
 import { loadAssets, type AssetView } from "@/lib/data";
 import { useAutoRefresh, useRefreshIntervalSetting } from "@/lib/refresh-interval";
@@ -30,6 +41,17 @@ export function ChainFallbackNotice({ networkName }: { networkName?: string }) {
 }
 
 export default function Home() {
+  return (
+    <Suspense fallback={<Skeleton height={40} width="40%" />}>
+      <Dashboard />
+    </Suspense>
+  );
+}
+
+function Dashboard() {
+  const router = useRouter();
+  const params = useSearchParams();
+  const selected = parseSelection(new URLSearchParams(params.toString()));
   const [assets, setAssets] = useState<AssetView[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [now, setNow] = useState(nowSecs());
@@ -83,6 +105,16 @@ export default function Home() {
     assets && debouncedQuery.trim()
       ? assets.filter((a) => matchesQuery(a, debouncedQuery.trim()))
       : assets;
+  const full = selected.length >= MAX_COMPARE;
+
+  const applySelection = (next: string[]) => {
+    const url = new URL(window.location.href);
+    if (next.length === 0) url.searchParams.delete(COMPARE_PARAM);
+    else url.searchParams.set(COMPARE_PARAM, next.join(","));
+    router.replace(url.pathname + url.search, { scroll: false });
+  };
+
+  const toggle = (sac: string) => applySelection(toggleSelection(selected, sac));
 
   return (
     <>
@@ -144,6 +176,38 @@ export default function Home() {
         </div>
       ) : null}
       {source === "chain" ? <ChainFallbackNotice /> : null}
+      <section className="card compare-bar mt" aria-label="Compare assets">
+        <div>
+          <strong aria-live="polite">
+            {selected.length} of {MAX_COMPARE} selected
+          </strong>
+          <div className="sub">
+            Pick up to five assets to plot their coverage histories on one chart.
+          </div>
+        </div>
+        <div className="row">
+          {selected.length > 0 ? (
+            <Link className="button" href={comparisonHref(selected)}>
+              Compare selected
+            </Link>
+          ) : (
+            <button type="button" disabled aria-describedby="compare-bar-hint">
+              Compare selected
+            </button>
+          )}
+          <button
+            type="button"
+            className="secondary"
+            onClick={() => applySelection([])}
+            disabled={selected.length === 0}
+          >
+            Clear all
+          </button>
+        </div>
+        <span id="compare-bar-hint" className="sr-only">
+          Select at least one asset with the Compare checkboxes on the cards below.
+        </span>
+      </section>
 
       {error ? (
         <p className="notice notice-bad mt" role="alert">
@@ -162,6 +226,18 @@ export default function Home() {
               </div>
             ))
           : filtered?.map((a) => <AssetCard key={a.sac} asset={a} now={now} />)}
+          : assets?.map((a) => (
+              <AssetCard
+                key={a.sac}
+                asset={a}
+                now={now}
+                selection={{
+                  checked: selected.includes(a.sac),
+                  disabled: full && !selected.includes(a.sac),
+                  onToggle: () => toggle(a.sac),
+                }}
+              />
+            ))}
       </div>
 
       {filtered && filtered.length === 0 && debouncedQuery.trim() ? (
