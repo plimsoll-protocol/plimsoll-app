@@ -126,6 +126,11 @@ export interface IndexerReporter {
   /** Number of accepted disputes against this reporter (optional). */
   disputes?: number;
   /** Reputation score 0–100 (optional). */
+  /**
+   * The reporter's on-chain reputation score, when the indexer has read one
+   * from the registry. Optional: an indexer that has not indexed it yet, or a
+   * registry build without it, omits the field.
+   */
   reputation?: number;
 }
 

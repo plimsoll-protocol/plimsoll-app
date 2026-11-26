@@ -16,6 +16,7 @@ import { config, explorer } from "@/lib/config";
 import { loadIndexerStatus, type IndexerStatus } from "@/lib/data";
 import { SearchPalette } from "./SearchPalette";
 import { PlimsollMark } from "./ui";
+import { PlimsollMark } from "./PlimsollMark";
 
 const NAV = [
   { href: "/", label: "Assets" },

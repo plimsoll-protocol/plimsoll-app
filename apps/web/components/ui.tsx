@@ -11,6 +11,9 @@ import {
   type CoverageStatus,
   Tier,
 } from "@plimsoll/sdk";
+import { PlimsollMark } from "./PlimsollMark";
+
+export { PlimsollMark };
 
 export async function copyToClipboard(
   value: string,

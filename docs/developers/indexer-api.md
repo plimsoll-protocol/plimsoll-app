@@ -68,6 +68,7 @@ report. `coverage.bps` is `null` when supply is zero.
 | `GET /v1/reporters` | `{"reporters":[{"address","role","name","updated_at"}]}` |
 | `GET /v1/reconcile?asset={sac}` | The state reconciler's last run, optionally for one asset |
 | `GET /v1/assets/{sac}/events` | `text/event-stream` of new snapshots and reports |
+| `GET /v1/reporters` | `{"reporters":[{"address","role","name","updated_at","reputation"}]}`; `reputation` is optional when no score is available |
 | `GET /v1/breakdowns/{hash}` | The exact bytes that were hashed |
 
 ## `GET /v1/reconcile`

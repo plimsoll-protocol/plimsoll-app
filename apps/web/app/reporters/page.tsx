@@ -2,15 +2,20 @@
 
 import Link from "next/link";
 <<<<<<< HEAD
+<<<<<<< HEAD
 import { useCallback, useRef, useState } from "react";
 =======
 import { useEffect, useRef, useState } from "react";
 >>>>>>> pr-160
+=======
+import { useEffect, useMemo, useState } from "react";
+>>>>>>> pr-184
 import { ago, shortAddress, type IndexerReporter } from "@plimsoll/sdk";
 import { Breadcrumb } from "@/components/Breadcrumb";
 import { Skeleton, nowSecs } from "@/components/ui";
 import { EXTERNAL_REL, config, explorer } from "@/lib/config";
 import { indexer, loadReporters } from "@/lib/data";
+<<<<<<< HEAD
 <<<<<<< HEAD
 <<<<<<< HEAD
 =======
@@ -182,15 +187,32 @@ import {
   writePanelPreference,
 } from "@/lib/filter-panel";
 >>>>>>> pr-160
+=======
+import {
+  REPUTATION_TOOLTIP,
+  groupReporters,
+  reputationOf,
+  reputationText,
+  sortReporters,
+  updatedAt,
+  type ReporterSort,
+  type SortDirection,
+} from "@/lib/reporters";
+>>>>>>> pr-184
 
 export default function ReportersPage() {
   const [reporters, setReporters] = useState<IndexerReporter[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [now, setNow] = useState(nowSecs());
+<<<<<<< HEAD
   const [query, setQuery] = useState("");
   const [sort, setSort] = useState<ReporterSort>(DEFAULT_REPORTER_SORT);
   const [filtersOpen, setFiltersOpen] = useState(true);
   const filterToggle = useRef<HTMLButtonElement>(null);
+=======
+  const [sort, setSort] = useState<ReporterSort>("name");
+  const [direction, setDirection] = useState<SortDirection>("asc");
+>>>>>>> pr-184
   const noIndexer = indexer === null;
   const [intervalValue, setIntervalValue] = useRefreshIntervalSetting();
   const cancelRef = useRef<(() => void) | null>(null);
@@ -213,6 +235,7 @@ export default function ReportersPage() {
       });
   }, []);
 
+<<<<<<< HEAD
 <<<<<<< HEAD
   const { refresh } = useAutoRefresh(fetch, intervalValue);
 
@@ -240,6 +263,17 @@ export default function ReportersPage() {
     filterToggle.current?.focus();
   };
 >>>>>>> pr-160
+=======
+  const groups = useMemo(() => {
+    if (!reporters) return [];
+    return groupReporters(reporters)
+      .map((group) => ({ ...group, reporters: sortReporters(group.reporters, sort, direction) }))
+      .filter((group) => group.reporters.length > 0);
+  }, [reporters, sort, direction]);
+
+  const ariaSort = (column: ReporterSort) =>
+    sort === column ? (direction === "asc" ? "ascending" : "descending") : "none";
+>>>>>>> pr-184
 
   return (
     <>
@@ -256,8 +290,8 @@ export default function ReportersPage() {
       </div>
       <p className="sub" style={{ maxWidth: 680 }}>
         Reserve figures carry the weight of whoever signed them. These are the auditors,
-        transcribers and supply posters registered on {config.networkName}, and when each was last
-        updated.
+        transcribers and supply posters registered on {config.networkName}, their reputation score
+        and when each was last updated.
       </p>
 
       {!noIndexer ? (
@@ -373,10 +407,35 @@ export default function ReportersPage() {
         </p>
       ) : null}
 
+<<<<<<< HEAD
       {reporters && reporters.length > 0 && visible.length === 0 ? (
         <p className="notice notice-info mt">
           No reporter matches “{query.trim()}”. Try a different name or address.
         </p>
+=======
+      {groups.length > 0 ? (
+        <div className="spread mt" style={{ alignItems: "flex-end", gap: 12 }}>
+          <label style={{ maxWidth: 200 }}>
+            Sort by
+            <select value={sort} onChange={(e) => setSort(e.target.value as ReporterSort)}>
+              <option value="name">Name</option>
+              <option value="reputation">Reputation</option>
+            </select>
+          </label>
+          <button
+            type="button"
+            className="secondary"
+            onClick={() => setDirection((d) => (d === "asc" ? "desc" : "asc"))}
+            aria-label={
+              direction === "asc"
+                ? `Sort ${sort === "name" ? "names" : "reputation"} descending`
+                : `Sort ${sort === "name" ? "names" : "reputation"} ascending`
+            }
+          >
+            {direction === "asc" ? "Ascending ↑" : "Descending ↓"}
+          </button>
+        </div>
+>>>>>>> pr-184
       ) : null}
 
       {groups.map((group) => (
@@ -394,19 +453,26 @@ export default function ReportersPage() {
           <div className="table-wrap">
             <table>
               <caption className="sr-only">
-                Registered {group.heading.toLowerCase()}, with their Stellar account and the last
-                update to their entry
+                Registered {group.heading.toLowerCase()}, with their Stellar account, reputation
+                score and the last update to their entry
               </caption>
               <thead>
                 <tr>
-                  <th scope="col">Name</th>
+                  <th scope="col" aria-sort={ariaSort("name")}>
+                    Name
+                  </th>
                   <th scope="col">Address</th>
+                  <th scope="col" aria-sort={ariaSort("reputation")} title={REPUTATION_TOOLTIP}>
+                    <span title={REPUTATION_TOOLTIP}>Reputation</span>
+                    <span className="sr-only">. {REPUTATION_TOOLTIP}</span>
+                  </th>
                   <th scope="col">Last update</th>
                 </tr>
               </thead>
               <tbody>
                 {group.reporters.map((reporter) => {
                   const at = updatedAt(reporter.updated_at);
+                  const score = reputationOf(reporter);
                   return (
                     <tr key={reporter.address}>
                       <td>
@@ -424,6 +490,12 @@ export default function ReportersPage() {
                         >
                           {shortAddress(reporter.address, 8)}
                         </a>
+                      </td>
+                      <td
+                        className="num"
+                        title={score === null ? "No reputation score available" : undefined}
+                      >
+                        {reputationText(reporter)}
                       </td>
                       <td className="num">
                         {at ? (

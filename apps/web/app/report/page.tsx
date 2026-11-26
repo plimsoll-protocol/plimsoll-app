@@ -193,6 +193,17 @@ export default function ReportPage() {
     /^[0-9a-f]{64}$/.test(docHash) &&
     status.kind !== "busy";
 
+import dynamic from "next/dynamic";
+
+// The signing path pulls in @stellar/stellar-sdk and the wallet kit. Load it
+// only once the form mounts, so the page shell is in the first bundle and
+// paints immediately.
+const ReportForm = dynamic(() => import("./ReportForm"), {
+  ssr: false,
+  loading: () => <FormSkeleton />,
+});
+
+export default function ReportPage() {
   return (
     <>
       <div className="eyebrow">For issuers, auditors and transcribers</div>
@@ -485,20 +496,33 @@ export default function ReportPage() {
           </p>
         ) : null}
       </div>
+      <ReportForm />
     </>
   );
 }
 
-/**
- * Why there is no ratio to preview: the form divides by the latest supply
- * snapshot, and neither a missing snapshot nor an empty one can be divided by.
- */
-function noSupplyNote(asset: AssetView | undefined): string {
-  if (!asset) return "No asset selected yet, so there is no supply to compare against.";
-  if (asset.supply) {
-    return `${asset.code}'s latest supply snapshot is zero, so there is no ratio to preview. With nothing circulating, reserves have nothing to cover.`;
-  }
-  return `No supply snapshot for ${asset.code} yet, so there is no ratio to preview. The supply poster records one for each listed asset; the preview appears once it lands.`;
+function FormSkeleton() {
+  return (
+    <div
+      className="mt"
+      aria-busy="true"
+      aria-label="Loading the report form"
+      style={{ maxWidth: 680 }}
+    >
+      <div className="card" style={{ display: "grid", gap: 12 }}>
+        <Bar height={24} width="40%" />
+        <Bar height={14} width="70%" />
+      </div>
+      <div className="mt" style={{ display: "grid", gap: 16 }}>
+        {[0, 1, 2, 3].map((i) => (
+          <div key={i} style={{ display: "grid", gap: 6 }}>
+            <Bar height={14} width="22%" />
+            <Bar height={42} />
+          </div>
+        ))}
+      </div>
+    </div>
+  );
 }
 
 export const ERRORS: Record<number, string> = {
@@ -527,4 +551,6 @@ export function friendly(e: unknown, fallback: string): string {
       ? e.code
       : parseContractErrorCode(fallback);
   return (code !== undefined && ERRORS[code]) || (code !== undefined && describeError(code, "ledger")) || fallback;
+function Bar({ height, width = "100%" }: { height: number; width?: string }) {
+  return <div className="skeleton" style={{ height, width }} aria-hidden="true" />;
 }
