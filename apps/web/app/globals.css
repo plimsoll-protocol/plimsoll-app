@@ -25,7 +25,7 @@
 }
 
 @media (prefers-color-scheme: dark) {
-  :root:not([data-theme="light"]) {
+  :root:not([data-theme="light"]):not([data-theme="dark"]) {
     --paper: #0d1620;
     --surface: #142230;
     --ink: #e8edf2;
@@ -45,6 +45,27 @@
     --sea-bg: #142f45;
     color-scheme: dark;
   }
+}
+
+:root[data-theme="dark"] {
+  --paper: #0d1620;
+  --surface: #142230;
+  --ink: #e8edf2;
+  --ink-2: #b4c0cc;
+  --ink-3: #8696a6;
+  --line: #243546;
+  --brand: #e8edf2;
+  --mark: #ef6a4f;
+  --ok: #5fd39a;
+  --ok-bg: #12382a;
+  --warn: #f0a46c;
+  --warn-bg: #3d2614;
+  --bad: #ff8a80;
+  --bad-bg: #3f1915;
+  --muted-bg: #1b2b3b;
+  --sea: #8cc4ef;
+  --sea-bg: #142f45;
+  color-scheme: dark;
 }
 
 * {
@@ -171,9 +192,77 @@ p {
 .skip-link:focus {
   top: 8px;
 }
+.site-search {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: auto;
+}
+.site-search input {
+  width: 190px;
+  min-width: 0;
+  padding: 7px 10px;
+}
+.site-search button {
+  padding: 7px 10px;
+}
+.shortcut-dialog {
+  width: min(460px, calc(100vw - 32px));
+  max-height: calc(100dvh - 32px);
+  margin: auto;
+  padding: 24px;
+  overflow: auto;
+  color: var(--ink);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+}
+.shortcut-dialog::backdrop {
+  background: rgb(0 0 0 / 55%);
+}
+.shortcut-dialog-heading {
+  align-items: flex-start;
+}
+.shortcut-dialog-heading h2 {
+  margin-top: 0;
+}
+.shortcut-list {
+  display: grid;
+  gap: 12px;
+  margin: 20px 0 0;
+}
+.shortcut-list > div {
+  display: grid;
+  grid-template-columns: 56px 1fr;
+  align-items: center;
+  gap: 12px;
+}
+.shortcut-list dt,
+.shortcut-list dd {
+  margin: 0;
+}
+kbd {
+  display: inline-block;
+  min-width: 2rem;
+  padding: 2px 7px;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  background: var(--muted-bg);
+  color: var(--ink);
+  font: inherit;
+  text-align: center;
+}
 @media (max-width: 760px) {
   .site-header .wrap {
     gap: 12px;
+  }
+  .site-search {
+    order: 4;
+    flex: 1 0 100%;
+    margin-left: 0;
+  }
+  .site-search input {
+    width: min(100%, 320px);
   }
   .nav-toggle {
     display: inline-flex;
