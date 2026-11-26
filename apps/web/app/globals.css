@@ -1289,6 +1289,66 @@ th button.sort-btn:focus-visible {
 .mt {
   margin-top: 24px;
 }
+
+/* collapsible reporter filters */
+.filter-panel {
+  padding: 0;
+  overflow: hidden;
+}
+.filter-panel-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding: 8px 14px;
+}
+button.filter-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 2px;
+  border: 0;
+  background: transparent;
+  color: var(--ink);
+}
+.filter-chevron {
+  color: var(--ink-3);
+  font-size: 0.8rem;
+}
+.filter-count {
+  display: inline-grid;
+  place-items: center;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: var(--mark);
+  color: #fff;
+  font-size: 0.75rem;
+  font-weight: 700;
+  line-height: 1;
+}
+.filter-summary {
+  margin-left: auto;
+}
+.filter-panel-body {
+  display: grid;
+  gap: 16px;
+  grid-template-columns: minmax(0, 1fr) minmax(190px, 250px);
+  padding: 14px;
+  border-top: 1px solid var(--line);
+}
+.filter-panel-body[hidden] {
+  display: none;
+}
+@media (max-width: 640px) {
+  .filter-panel-body {
+    grid-template-columns: 1fr;
+  }
+  .filter-summary {
+    margin-left: 0;
+  }
+}
 .sr-only {
   position: absolute;
   width: 1px;

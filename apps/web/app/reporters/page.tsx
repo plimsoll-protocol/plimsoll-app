@@ -1,12 +1,17 @@
 "use client";
 
 import Link from "next/link";
+<<<<<<< HEAD
 import { useCallback, useRef, useState } from "react";
+=======
+import { useEffect, useRef, useState } from "react";
+>>>>>>> pr-160
 import { ago, shortAddress, type IndexerReporter } from "@plimsoll/sdk";
 import { Breadcrumb } from "@/components/Breadcrumb";
 import { Skeleton, nowSecs } from "@/components/ui";
 import { config, explorer } from "@/lib/config";
 import { indexer, loadReporters } from "@/lib/data";
+<<<<<<< HEAD
 import { groupReporters, updatedAt } from "@/lib/reporters";
 import { useAutoRefresh, useRefreshIntervalSetting } from "@/lib/refresh-interval";
 import { RefreshControls } from "@/components/RefreshControls";
@@ -154,11 +159,34 @@ function ReporterTable({ group, now }: { group: ReporterGroup; now: number }) {
     </div>
   );
 }
+=======
+import {
+  DEFAULT_REPORTER_SORT,
+  REPORTER_SORTS,
+  REPORTER_SORT_LABELS,
+  activeFilterCount,
+  filterReporters,
+  groupReporters,
+  isReporterSort,
+  updatedAt,
+  type ReporterSort,
+} from "@/lib/reporters";
+import {
+  DESKTOP_FILTER_QUERY,
+  defaultPanelOpen,
+  readPanelPreference,
+  writePanelPreference,
+} from "@/lib/filter-panel";
+>>>>>>> pr-160
 
 export default function ReportersPage() {
   const [reporters, setReporters] = useState<IndexerReporter[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [now, setNow] = useState(nowSecs());
+  const [query, setQuery] = useState("");
+  const [sort, setSort] = useState<ReporterSort>(DEFAULT_REPORTER_SORT);
+  const [filtersOpen, setFiltersOpen] = useState(true);
+  const filterToggle = useRef<HTMLButtonElement>(null);
   const noIndexer = indexer === null;
   const [intervalValue, setIntervalValue] = useRefreshIntervalSetting();
   const cancelRef = useRef<(() => void) | null>(null);
@@ -181,9 +209,33 @@ export default function ReportersPage() {
       });
   }, []);
 
+<<<<<<< HEAD
   const { refresh } = useAutoRefresh(fetch, intervalValue);
 
   const groups = reporters ? groupReporters(reporters).filter((g) => g.reporters.length > 0) : [];
+=======
+  // Without a stored choice, open on desktop and closed on a narrow screen.
+  useEffect(() => {
+    const stored = readPanelPreference(window.localStorage);
+    setFiltersOpen(stored ?? defaultPanelOpen(window.matchMedia(DESKTOP_FILTER_QUERY).matches));
+  }, []);
+
+  const visible = reporters ? filterReporters(reporters, query) : [];
+  const groups = groupReporters(visible, sort).filter((g) => g.reporters.length > 0);
+  const filterCount = activeFilterCount(query, sort);
+
+  const toggleFilters = () => {
+    const next = !filtersOpen;
+    setFiltersOpen(next);
+    writePanelPreference(window.localStorage, next);
+  };
+
+  const closeFilters = () => {
+    setFiltersOpen(false);
+    writePanelPreference(window.localStorage, false);
+    filterToggle.current?.focus();
+  };
+>>>>>>> pr-160
 
   return (
     <>
@@ -203,6 +255,79 @@ export default function ReportersPage() {
         transcribers and supply posters registered on {config.networkName}, and when each was last
         updated.
       </p>
+
+      {!noIndexer ? (
+        <section className="card filter-panel mt" aria-labelledby="reporter-filters-heading">
+          <div className="filter-panel-head">
+            <h2 id="reporter-filters-heading" className="sr-only">
+              Filter reporters
+            </h2>
+            <button
+              ref={filterToggle}
+              type="button"
+              className="filter-toggle"
+              aria-expanded={filtersOpen}
+              aria-controls="reporter-filters"
+              onClick={toggleFilters}
+            >
+              <span className="filter-chevron" aria-hidden="true">
+                {filtersOpen ? "▾" : "▸"}
+              </span>
+              Filters
+              {!filtersOpen && filterCount > 0 ? (
+                <span
+                  className="filter-count"
+                  aria-label={`${filterCount} active ${filterCount === 1 ? "filter" : "filters"}`}
+                >
+                  {filterCount}
+                </span>
+              ) : null}
+            </button>
+            {reporters ? (
+              <span className="sub filter-summary" aria-live="polite">
+                {visible.length} of {reporters.length} shown
+              </span>
+            ) : null}
+          </div>
+          <div
+            id="reporter-filters"
+            className="filter-panel-body"
+            hidden={!filtersOpen}
+            onKeyDown={(event) => {
+              if (event.key === "Escape") {
+                event.stopPropagation();
+                closeFilters();
+              }
+            }}
+          >
+            <label>
+              Search reporters
+              <input
+                type="search"
+                value={query}
+                onChange={(event) => setQuery(event.target.value)}
+                placeholder="Name or address"
+                autoComplete="off"
+              />
+            </label>
+            <label>
+              Sort by
+              <select
+                value={sort}
+                onChange={(event) => {
+                  if (isReporterSort(event.target.value)) setSort(event.target.value);
+                }}
+              >
+                {REPORTER_SORTS.map((option) => (
+                  <option key={option} value={option}>
+                    {REPORTER_SORT_LABELS[option]}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </div>
+        </section>
+      ) : null}
 
       {noIndexer ? (
         <div className="notice notice-info mt">
@@ -241,6 +366,12 @@ export default function ReportersPage() {
       {reporters && reporters.length === 0 ? (
         <p className="notice notice-info mt">
           No reporters are registered yet. <Link href="/about/">See what each role means</Link>.
+        </p>
+      ) : null}
+
+      {reporters && reporters.length > 0 && visible.length === 0 ? (
+        <p className="notice notice-info mt">
+          No reporter matches “{query.trim()}”. Try a different name or address.
         </p>
       ) : null}
 

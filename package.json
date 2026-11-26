@@ -15,6 +15,8 @@
     "test": "npm run test --workspaces --if-present",
     "test:visual": "playwright test",
     "test:visual:update": "playwright test --update-snapshots",
+    "test:a11y": "playwright test --config apps/web/playwright.config.ts",
+    "test:a11y:install": "playwright install --with-deps chromium",
     "typecheck": "npm run typecheck --workspaces --if-present",
     "lint": "eslint .",
     "format": "prettier --write .",
@@ -23,8 +25,10 @@
     "test:visual:update": "playwright test --update-snapshots"
   },
   "devDependencies": {
+    "@axe-core/playwright": "^4.14.1",
     "@eslint/js": "9.39.5",
     "@playwright/test": "1.51.1",
+    "@playwright/test": "^1.65.1",
     "eslint": "9.39.5",
     "eslint-config-next": "16.3.8",
     "globals": "17.14.0",
