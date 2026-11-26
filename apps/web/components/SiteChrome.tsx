@@ -14,6 +14,7 @@ import { useEffect, useRef, useState } from "react";
 import { ago } from "@plimsoll/sdk";
 import { config, explorer } from "@/lib/config";
 import { loadIndexerStatus, type IndexerStatus } from "@/lib/data";
+import { SearchPalette } from "./SearchPalette";
 import { PlimsollMark } from "./ui";
 
 const NAV = [
@@ -152,6 +153,7 @@ export function Header() {
             </span>
           ) : null}
         </form>
+        <SearchPalette />
         <button
           ref={button}
           type="button"
