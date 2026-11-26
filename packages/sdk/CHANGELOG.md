@@ -18,6 +18,8 @@ format of [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - `IndexerClient.streamReports(asset, options)` and the standalone
   `streamReports(indexerBase, asset, options)`: an async iterable over the
   indexer's SSE report stream that closes its `EventSource` when the loop exits.
+- `IndexerClient.getReportBySeq(asset, seq)`: one historical report by sequence
+  number, `null` when the seq is unknown.
 
 ## [0.1.0] - 2026-11-24
 

@@ -246,6 +246,49 @@ export class IndexerClient {
     return body.reports;
   }
 
+  /**
+   * One historical reserve report, by its sequence number, for linking straight
+   * from the indexer's audit trail to the report it records.
+   *
+   * Resolves `null` when the asset has no report with that `seq`. An unknown
+   * *asset* is different: the indexer answers 404 "asset not found" and this
+   * throws an {@link IndexerError}, as `getAsset` does. Any other failure
+   * throws too, so a network error is never mistaken for a missing report.
+   *
+   * Because a 404 for the report and a 404 for an indexer that does not serve
+   * `GET /v1/assets/{sac}/reports/{seq}` look the same on the wire, `null`
+   * from an older indexer means "not available there", not "no such report".
+   *
+   * @param asset Stellar Asset Contract address.
+   * @param seq Zero-or-greater integer sequence number of the report.
+   * @throws {RangeError} If `seq` is not a non-negative safe integer.
+   * @example
+   * ```ts
+   * const report = await indexer.getReportBySeq(sac, 42);
+   * if (report === null) console.log("no such report");
+   * ```
+   */
+  async getReportBySeq(
+    asset: string,
+    seq: number,
+    opts?: RequestOptions,
+  ): Promise<IndexerReport | null> {
+    if (!Number.isSafeInteger(seq) || seq < 0) {
+      throw new RangeError(`seq must be a non-negative integer, got ${String(seq)}`);
+    }
+    try {
+      return await this.get<IndexerReport>(
+        `/v1/assets/${encodeURIComponent(asset)}/reports/${seq}`,
+        opts,
+      );
+    } catch (err) {
+      if (err instanceof IndexerError && err.status === 404 && !/asset/i.test(err.message)) {
+        return null;
+      }
+      throw err;
+    }
+  }
+
   async reporters(opts?: RequestOptions): Promise<IndexerReporter[]> {
     const body = await this.get<{ reporters: IndexerReporter[] }>(`/v1/reporters`, opts);
     return body.reporters;

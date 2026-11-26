@@ -90,6 +90,15 @@ while your loop is busy are kept in order, up to `maxBuffered` (default 1 000);
 past that the iterator throws `ReportStreamOverflowError` instead of dropping
 reports silently. The stream needs an indexer that serves
 `GET /v1/assets/{sac}/events`.
+### Link to one historical report
+
+`indexer.getReportBySeq(sac, seq)` fetches a single report by its sequence
+number, for linking from the indexer's audit trail to the report it records. It
+resolves `null` when that asset has no report with that `seq`. An unknown asset
+throws `IndexerError` (404), as `getAsset` does, and a `seq` that is not a
+non-negative integer throws `RangeError` before any request is made. It needs an
+indexer that serves `GET /v1/assets/{sac}/reports/{seq}`; an older indexer
+answers 404, which reads as `null`.
 
 ## Verify a figure
 
