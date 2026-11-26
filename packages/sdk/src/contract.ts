@@ -280,6 +280,41 @@ export class PlimsollContracts extends ContractClient {
 
   async ledgerAdmin(): Promise<string> {
     return String(await this.read(this.ledger, "admin", []));
+  /**
+   * Dry-run `is_covered` through Soroban simulation without signing or
+   * submitting a transaction. Returns the boolean the contract would return,
+   * or throws {@link ContractCallError} when the contract rejects the call
+   * (e.g. the asset is not listed or a parameter is out of range).
+   *
+   * @param sac - SAC address of the asset
+   * @param minBps - minimum coverage BPS required
+   * @param maxAgeSeconds - maximum age for reserve reports and supply snapshots
+   * @param minTier - minimum report tier
+   *
+   * @example
+   * ```ts
+   * const covered = await contracts.simulateCoverage(
+   *   pusdSac,
+   *   10_000,
+   *   7 * 24 * 3600,
+   *   Tier.AuditorSigned,
+   * );
+   * console.log(covered); // true | false
+   * ```
+   */
+  async simulateCoverage(
+    sac: string,
+    minBps: number,
+    maxAgeSeconds: number,
+    minTier: Tier,
+  ): Promise<boolean> {
+    const v = await this.read(this.ledger, "is_covered", [
+      addr(sac),
+      u32(minBps),
+      u64(maxAgeSeconds),
+      u32(minTier),
+    ]);
+    return v === true;
   }
 
   // -- writes: return prepared, unsigned transaction XDR --

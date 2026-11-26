@@ -119,7 +119,11 @@ describe("IndexerClient webhook methods", () => {
 });
 
 describe("IndexerClient batchCoverageStatus", () => {
-  const makeCoverage = (bps: number | null, reportAge: number, supplyAge: number) => ({
+  const makeCoverage = (
+    bps: number | null,
+    reportAge: number,
+    supplyAge: number,
+  ) => ({
     bps,
     ratio: bps != null ? String(bps / 10000) : null,
     tier: "issuer_signed" as const,
@@ -134,7 +138,12 @@ describe("IndexerClient batchCoverageStatus", () => {
     doc_uri: "https://example.com",
   });
 
-  const makeAsset = (sac: string, bps: number | null, reportAge = 60, supplyAge = 60) => ({
+  const makeAsset = (
+    sac: string,
+    bps: number | null,
+    reportAge = 60,
+    supplyAge = 60,
+  ) => ({
     sac,
     code: "TEST",
     issuer: "GABC",
@@ -147,7 +156,9 @@ describe("IndexerClient batchCoverageStatus", () => {
   });
 
   it("returns covered for bps >= 10000 and fresh ages", async () => {
-    const f = vi.fn(async () => json(makeAsset("CAAA", 10_000)));
+    const f = vi.fn(async () =>
+      json(makeAsset("CAAA", 10_000)),
+    );
     const c = new IndexerClient("http://x", f as unknown as typeof fetch);
     const result = await c.batchCoverageStatus(["CAAA"]);
     expect(result.get("CAAA")).toBe("covered");
@@ -207,7 +218,9 @@ describe("IndexerClient batchCoverageStatus", () => {
 
   it("respects custom maxAgeSeconds", async () => {
     const tenDays = 10 * 24 * 3600;
-    const f = vi.fn(async () => json(makeAsset("CAAA", 10_000, tenDays - 1, 60)));
+    const f = vi.fn(async () =>
+      json(makeAsset("CAAA", 10_000, tenDays - 1, 60)),
+    );
     const c = new IndexerClient("http://x", f as unknown as typeof fetch);
     const strictResult = await c.batchCoverageStatus(["CAAA"]);
     expect(strictResult.get("CAAA")).toBe("stale");

@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
+import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ago, bpsToPercent, tierLabel, tierFromName } from "@plimsoll/sdk";
 import type { IndexerReport } from "@plimsoll/sdk";
 import { Skeleton, nowSecs } from "@/components/ui";
@@ -164,7 +164,7 @@ function HistoryDetail() {
             Showing {rows.length} report{rows.length !== 1 ? "s" : ""} from {toISODate(range.from)}{" "}
             to {toISODate(range.to)}.
           </p>
-          <HistoryChart rows={rows} />
+          <LazyHistoryChart rows={rows} />
           <div className="table-wrap" style={{ marginTop: 16 }}>
             <table>
               <thead>
@@ -220,6 +220,40 @@ function HistoryDetail() {
 interface ChartRow {
   timestamp: number;
   bps: number | null;
+}
+
+/**
+ * Wraps HistoryChart in an Intersection Observer so the SVG is only rendered
+ * and computed once the container scrolls into the viewport. On SSR (and in
+ * test environments where IntersectionObserver is unavailable) the chart is
+ * rendered immediately.
+ */
+function LazyHistoryChart({ rows }: { rows: ChartRow[] }) {
+  const containerRef = useRef<HTMLDivElement>(null);
+  const [visible, setVisible] = useState(typeof IntersectionObserver === "undefined");
+
+  useEffect(() => {
+    if (typeof IntersectionObserver === "undefined") return;
+    const el = containerRef.current;
+    if (!el) return;
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        if (entry?.isIntersecting) {
+          setVisible(true);
+          observer.disconnect();
+        }
+      },
+      { rootMargin: "200px" },
+    );
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
+
+  return (
+    <div ref={containerRef} style={{ minHeight: 160 }}>
+      {visible ? <HistoryChart rows={rows} /> : null}
+    </div>
+  );
 }
 
 function HistoryChart({ rows }: { rows: ChartRow[] }) {

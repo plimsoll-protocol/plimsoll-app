@@ -1,5 +1,21 @@
 /** Typed client for the plimsoll-indexer HTTP API. */
 
+import { DEFAULT_MAX_AGE_SECONDS, type CoverageStatus } from "./format";
+
+/** Re-exported coverage status for use with {@link IndexerClient.batchCoverageStatus}. */
+export type IndexerCoverageStatus = CoverageStatus;
+
+function indexerCoverageStatus(
+  bps: number | null,
+  ages: { report: number; supply: number },
+  maxAgeSeconds: number = DEFAULT_MAX_AGE_SECONDS,
+): IndexerCoverageStatus {
+  if (bps == null) return "unknown";
+  if (ages.report > maxAgeSeconds) return "stale";
+  if (ages.supply > maxAgeSeconds) return "stale";
+  return bps >= 10_000 ? "covered" : "under";
+}
+
 /**
  * Where a figure came from. "event" means it was decoded from a contract
  * event, and tx_hash names the transaction that produced it. "chain" means the
@@ -299,6 +315,53 @@ export class IndexerClient {
    */
   async testWebhook(id: string, opts?: RequestOptions): Promise<IndexerWebhookTestResult> {
     return this.post<IndexerWebhookTestResult>("/v1/webhooks/test", { id }, opts);
+   * Classify coverage status for many assets in one call.
+   *
+   * The indexer has no batch endpoint, so this fans out to `getAsset` in
+   * parallel and returns the status for each SAC address. When an asset is
+   * not found or the request fails, its entry is `"unknown"`.
+   *
+   * @param assets - SAC addresses to check
+   * @param maxAgeSeconds - passed to `coverageStatus`; defaults to
+   *   `DEFAULT_MAX_AGE_SECONDS`
+   * @param opts - per-request options applied to every sub-request
+   *
+   * @example
+   * ```ts
+   * const statuses = await indexer.batchCoverageStatus(
+   *   [pusdSac, usdcSac],
+   *   { maxAgeSeconds: 7 * 24 * 3600 },
+   * );
+   * console.log(statuses.get(pusdSac)); // "covered" | "under" | "stale" | "unknown"
+   * ```
+   */
+  async batchCoverageStatus(
+    assets: string[],
+    opts?: RequestOptions & { maxAgeSeconds?: number },
+  ): Promise<Map<string, IndexerCoverageStatus>> {
+    const { maxAgeSeconds, ...reqOpts } = opts ?? {};
+    const results = await Promise.allSettled(assets.map((sac) => this.getAsset(sac, 1, reqOpts)));
+    const out = new Map<string, IndexerCoverageStatus>();
+    for (let i = 0; i < assets.length; i++) {
+      const sac = assets[i]!;
+      const result = results[i]!;
+      if (result.status === "rejected") {
+        out.set(sac, "unknown");
+        continue;
+      }
+      const c = result.value.coverage;
+      if (!c) {
+        out.set(sac, "unknown");
+        continue;
+      }
+      const status = indexerCoverageStatus(
+        c.bps,
+        { report: c.report_age_seconds, supply: c.supply_age_seconds },
+        maxAgeSeconds,
+      );
+      out.set(sac, status);
+    }
+    return out;
   }
 
   /** Raw breakdown bytes, exactly as hashed on-chain. */
