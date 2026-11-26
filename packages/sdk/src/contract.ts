@@ -14,6 +14,7 @@ import {
 } from "@stellar/stellar-sdk";
 import { Buffer } from "buffer";
 import { RegistryError, describeError, parseContractErrorCode } from "./errors";
+import { TESTNET } from "./networks";
 import type {
   AssetRecord,
   Coverage,
@@ -215,6 +216,57 @@ export abstract class ContractClient {
       throw new ContractCallError("prepare", err instanceof Error ? err.message : String(err));
     }
   }
+
+  /**
+   * Estimates the resource fee in stroops for an operation using simulation.
+   *
+   * @param operation The operation to simulate.
+   * @returns The resource fee in stroops, or 0 on simulation error.
+   */
+  async estimateFee(operation: xdr.Operation): Promise<number> {
+    return estimateFee(operation, this.server, this.network.networkPassphrase);
+  }
+}
+
+/**
+ * Estimates the resource fee in stroops for an operation using simulation.
+ *
+ * Calls `simulateTransaction` on the given server (or TESTNET by default)
+ * and returns the resource fee (`minResourceFee`) in stroops.
+ * Returns 0 on simulation error or RPC exception (never throws).
+ *
+ * @param operation The operation to simulate.
+ * @param server Optional RPC server instance to simulate on (defaults to TESTNET RPC).
+ * @param networkPassphrase Optional network passphrase (defaults to TESTNET passphrase).
+ * @returns The resource fee in stroops, or 0 on simulation error.
+ */
+export async function estimateFee(
+  operation: xdr.Operation,
+  server?: rpc.Server,
+  networkPassphrase?: string,
+): Promise<number> {
+  try {
+    const s =
+      server ??
+      new rpc.Server(TESTNET.rpcUrl, {
+        allowHttp: TESTNET.rpcUrl.startsWith("http://"),
+      });
+    const passphrase = networkPassphrase ?? TESTNET.networkPassphrase;
+    const tx = new TransactionBuilder(new Account(READ_SOURCE, "0"), {
+      fee: BASE_FEE,
+      networkPassphrase: passphrase,
+    })
+      .addOperation(operation)
+      .setTimeout(30)
+      .build();
+    const sim = await s.simulateTransaction(tx);
+    if (rpc.Api.isSimulationError(sim)) {
+      return 0;
+    }
+    return Number(sim.minResourceFee ?? 0);
+  } catch {
+    return 0;
+  }
 }
 
 /**
@@ -352,21 +404,27 @@ export class PlimsollContracts extends ContractClient {
     );
   }
 
+  /**
+   * Builds the `post_reserve` operation.
+   *
+   * @param a The reserve report parameters.
+   * @returns The `xdr.Operation` for posting reserves.
+   */
+  postReserveOperation(a: ReservePostArgs): xdr.Operation {
+    return this.ledger.call(
+      "post_reserve",
+      addr(a.reporter),
+      addr(a.sac),
+      i128(a.amount),
+      u64(a.asOf),
+      bytes32(a.docHash),
+      str(a.docUri),
+    );
+  }
+
   /** Post a reserve figure. The reporter must be the transaction source. */
   async preparePostReserve(a: ReservePostArgs, opts?: PrepareOptions): Promise<string> {
-    return this.prepare(
-      a.reporter,
-      this.ledger.call(
-        "post_reserve",
-        addr(a.reporter),
-        addr(a.sac),
-        i128(a.amount),
-        u64(a.asOf),
-        bytes32(a.docHash),
-        str(a.docUri),
-      ),
-      opts,
-    );
+    return this.prepare(a.reporter, this.postReserveOperation(a), opts);
   }
 
   async prepareSetReporter(

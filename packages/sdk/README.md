@@ -53,6 +53,9 @@ console.log(ok ? "accept" : "refuse");
 `TESTNET` is the v0.1 testnet deployment. For another network, pass your own
 `NetworkConfig` (`rpcUrl`, `networkPassphrase`, `coverageLedgerId`,
 `reporterRegistryId`). A failed simulation throws `ContractCallError`.
+To estimate resource fees before signing, use `estimateFee(operation)` or
+`plimsoll.estimateFee(operation)`, which returns the fee in stroops or `0` on
+simulation failure.
 
 ## Query the indexer
 

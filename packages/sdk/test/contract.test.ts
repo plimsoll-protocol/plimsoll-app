@@ -19,6 +19,7 @@ import {
   TESTNET,
   Tier,
   assertReporterName,
+  estimateFee,
 } from "../src/index";
 
 // Every RPC method the client uses is stubbed on its own `server`, so nothing
@@ -384,5 +385,43 @@ describe("PlimsollContracts writes", () => {
       295,
     );
     expect(Number(d.timeBounds!.maxTime) - Math.floor(Date.now() / 1000)).toBeLessThanOrEqual(300);
+  });
+});
+
+describe("estimateFee", () => {
+  it("returns resource fee in stroops from simulation", async () => {
+    const client = new PlimsollContracts(config);
+    vi.spyOn(client.server, "simulateTransaction").mockResolvedValue(simSuccess());
+    const op = client.ledger.call("get_asset", nativeToScVal(sac, { type: "address" }));
+    const fee = await client.estimateFee(op);
+    expect(fee).toBe(100);
+  });
+
+  it("returns 0 on simulation error without throwing", async () => {
+    const client = new PlimsollContracts(config);
+    vi.spyOn(client.server, "simulateTransaction").mockResolvedValue(simError("Simulation failed"));
+    const op = client.ledger.call("get_asset", nativeToScVal(sac, { type: "address" }));
+    const fee = await client.estimateFee(op);
+    expect(fee).toBe(0);
+  });
+
+  it("returns 0 when simulation throws an exception", async () => {
+    const client = new PlimsollContracts(config);
+    vi.spyOn(client.server, "simulateTransaction").mockRejectedValue(new Error("Network error"));
+    const op = client.ledger.call("get_asset", nativeToScVal(sac, { type: "address" }));
+    const fee = await client.estimateFee(op);
+    expect(fee).toBe(0);
+  });
+
+  it("works with top-level estimateFee function", async () => {
+    const server = new rpc.Server("http://127.0.0.1:9");
+    vi.spyOn(server, "simulateTransaction").mockResolvedValue({
+      ...simSuccess(),
+      minResourceFee: "250",
+    } as unknown as rpc.Api.SimulateTransactionResponse);
+    const client = new PlimsollContracts(config);
+    const op = client.ledger.call("get_asset", nativeToScVal(sac, { type: "address" }));
+    const fee = await estimateFee(op, server, config.networkPassphrase);
+    expect(fee).toBe(250);
   });
 });

@@ -36,6 +36,20 @@ export default function ReportPage() {
   const [docHash, setDocHash] = useState("");
   const [tier, setTier] = useState<Tier | null | undefined>(undefined);
   const [status, setStatus] = useState<Status>({ kind: "idle" });
+  const [modalOpen, setModalOpen] = useState(false);
+  const [estimatedFee, setEstimatedFee] = useState<number | null>(null);
+  const [isEstimatingFee, setIsEstimatingFee] = useState(false);
+
+  useEffect(() => {
+    if (!modalOpen) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape" && status.kind !== "busy") {
+        setModalOpen(false);
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [modalOpen, status.kind]);
 
   useEffect(() => {
     loadAssets()
@@ -97,10 +111,36 @@ export default function ReportPage() {
   const preview = amountCheck.kind === "valid" ? amountCheck.preview : null;
   const docUriCheck = docUri.trim() ? validateDocUri(docUri) : null;
 
-  const submit = async (e: React.FormEvent) => {
+  const openModal = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!address || !tier || amountCheck.kind !== "valid" || preview?.warning) return;
     if (!docUriCheck?.valid) return;
+    setModalOpen(true);
+    setIsEstimatingFee(true);
+    setEstimatedFee(null);
+    try {
+      const units = amountCheck.units;
+      const asOfSecs = Math.floor(new Date(`${asOf}T00:00:00Z`).getTime() / 1000);
+      const op = contracts.postReserveOperation({
+        reporter: address,
+        sac,
+        amount: units,
+        asOf: asOfSecs,
+        docHash,
+        docUri,
+      });
+      const fee = await contracts.estimateFee(op);
+      setEstimatedFee(fee);
+    } catch {
+      setEstimatedFee(0);
+    } finally {
+      setIsEstimatingFee(false);
+    }
+  };
+
+  const confirmSign = async () => {
+    if (!address || !tier || amountCheck.kind !== "valid" || preview?.warning) return;
+    setModalOpen(false);
     try {
       const units = amountCheck.units;
       const asOfSecs = Math.floor(new Date(`${asOf}T00:00:00Z`).getTime() / 1000);
@@ -168,7 +208,7 @@ export default function ReportPage() {
         )}
       </div>
 
-      <form className="stack mt" onSubmit={submit}>
+      <form className="stack mt" onSubmit={openModal}>
         <label>
           Asset
           <select value={sac} onChange={(e) => setSac(e.target.value)} required>
@@ -301,10 +341,115 @@ export default function ReportPage() {
         </div>
         <div>
           <button type="submit" disabled={!ready}>
-            Sign and post
+            Review and sign
           </button>
         </div>
       </form>
+
+      {modalOpen ? (
+        <div
+          role="presentation"
+          onClick={() => status.kind !== "busy" && setModalOpen(false)}
+          style={{
+            position: "fixed",
+            inset: 0,
+            backgroundColor: "rgb(15 29 43 / 55%)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            zIndex: 100,
+            padding: 16,
+          }}
+        >
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="report-dialog-title"
+            className="wallet-dialog"
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              margin: 0,
+              maxHeight: "90vh",
+              overflowY: "auto",
+            }}
+          >
+            <div className="wallet-dialog-head">
+              <h2 id="report-dialog-title">Review &amp; sign report</h2>
+              <button
+                type="button"
+                className="wallet-dialog-close"
+                onClick={() => setModalOpen(false)}
+                disabled={status.kind === "busy"}
+                aria-label="Close"
+              >
+                Close
+              </button>
+            </div>
+            <div className="wallet-dialog-body">
+              <p className="sub" style={{ marginTop: 0 }}>
+                Review report details and estimated resource fee before signing with your wallet.
+              </p>
+              <div className="card" style={{ padding: 14, display: "grid", gap: 10 }}>
+                <div>
+                  <div className="stat-label">Asset</div>
+                  <div className="stat-value" style={{ fontSize: "1.05rem" }}>
+                    {selected?.code} ({shortAddress(sac, 6)})
+                  </div>
+                </div>
+                <div>
+                  <div className="stat-label">Reserves to report</div>
+                  <div className="stat-value" style={{ fontSize: "1.05rem" }}>
+                    {amount} {selected?.code}
+                  </div>
+                </div>
+                <div>
+                  <div className="stat-label">As of date (UTC)</div>
+                  <div className="stat-value" style={{ fontSize: "1.05rem" }}>
+                    {asOf}
+                  </div>
+                </div>
+                <div>
+                  <div className="stat-label">Document SHA-256</div>
+                  <div className="mono break" style={{ fontSize: "0.85rem" }}>
+                    {shortAddress(docHash, 8)}
+                  </div>
+                </div>
+                <div style={{ borderTop: "1px solid var(--line)", paddingTop: 10 }}>
+                  <div className="stat-label">Estimated resource fee</div>
+                  <div
+                    className="stat-value"
+                    id="report-signing-fee-estimate"
+                    style={{ fontSize: "1.1rem", color: "var(--brand)" }}
+                  >
+                    {isEstimatingFee ? "Estimating…" : `${estimatedFee ?? 0} stroops`}
+                  </div>
+                  <div className="sub" style={{ fontSize: "0.8rem", marginTop: 2 }}>
+                    Calculated via Soroban simulation. Network base fee (100 stroops) applies at
+                    submission.
+                  </div>
+                </div>
+              </div>
+              <div className="row mt" style={{ gap: 10 }}>
+                <button
+                  type="button"
+                  onClick={confirmSign}
+                  disabled={status.kind === "busy" || isEstimatingFee}
+                >
+                  Confirm and sign
+                </button>
+                <button
+                  type="button"
+                  className="secondary"
+                  onClick={() => setModalOpen(false)}
+                  disabled={status.kind === "busy"}
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      ) : null}
 
       <div aria-live="polite" className="mt" style={{ maxWidth: 680 }}>
         {status.kind === "busy" ? <p className="notice notice-info">{status.msg}</p> : null}

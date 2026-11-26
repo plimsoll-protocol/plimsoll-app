@@ -27,6 +27,7 @@
 
 ## Developers
 
+* [Developer setup guide](dev-setup.md)
 * [Local setup](developers/local-setup.md)
 * [Environment variables](developers/environment.md)
 * [TypeScript SDK](developers/sdk.md)
