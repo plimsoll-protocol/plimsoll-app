@@ -30,6 +30,8 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
+      - name: Check generated ABI types
+        run: npm run codegen:check -w @plimsoll/sdk
       - name: Build SDK
         run: npm run build -w @plimsoll/sdk
       - name: Typecheck
@@ -57,6 +59,8 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
+      - name: Check generated ABI types
+        run: npm run codegen:check -w @plimsoll/sdk
       - name: Build SDK
         run: npm run build -w @plimsoll/sdk
       - name: Install Playwright browsers

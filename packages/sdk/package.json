@@ -34,6 +34,8 @@
   },
   "scripts": {
     "build": "tsup src/index.ts --format esm --dts --clean",
+    "codegen": "node scripts/codegen-abi.mjs",
+    "codegen:check": "node scripts/codegen-abi.mjs --check",
     "test": "vitest run",
     "typecheck": "tsc --noEmit && tsc --noEmit -p examples",
     "size": "size-limit"

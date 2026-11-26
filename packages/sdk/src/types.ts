@@ -1,17 +1,17 @@
-/** Weight of a reserve report. Higher is stronger. Mirrors plimsoll_types::Tier. */
-export enum Tier {
-  Transcribed = 1,
-  IssuerSigned = 2,
-  AuditorSigned = 3,
-}
-
-/** What a registered address may post. Mirrors plimsoll_types::Role. */
-export enum Role {
-  Auditor = 1,
-  Transcriber = 2,
-  SupplyPoster = 3,
-  Watcher = 4,
-}
+export {
+  Tier,
+  Role,
+  type AssetRecord,
+  type SupplySnapshot,
+  type ReserveReport,
+  type Coverage,
+  type ReporterInfo,
+  type WithdrawalRequest,
+  type CoverageLedgerFns,
+  type ReporterRegistryFns,
+  type CoveredVaultFns,
+  type PlimsollContractFns,
+} from "./generated/contract-types";
 
 export interface NetworkConfig {
   rpcUrl: string;
@@ -19,13 +19,6 @@ export interface NetworkConfig {
   coverageLedgerId: string;
   reporterRegistryId: string;
   horizonUrl?: string;
-}
-
-export interface AssetRecord {
-  sac: string;
-  code: string;
-  issuer: string;
-  listedAt: number;
 }
 
 /**
@@ -42,59 +35,6 @@ export interface AssetMeta {
    * contract provides one; otherwise the asset code.
    */
   displayName: string;
-}
-
-export interface SupplySnapshot {
-  /** Smallest units (7 decimals for classic assets). */
-  amount: bigint;
-  ledger: number;
-  timestamp: number;
-  breakdownHash: string;
-  poster: string;
-}
-
-export interface ReserveReport {
-  amount: bigint;
-  asOf: number;
-  postedAt: number;
-  tier: Tier;
-  reporter: string;
-  docHash: string;
-  docUri: string;
-}
-
-export interface Coverage {
-  /** 10_000 = 100%. 4_294_967_295 means nothing is owed. */
-  bps: number;
-  supply: bigint;
-  reserves: bigint;
-  tier: Tier;
-  supplyLedger: number;
-  supplyTimestamp: number;
-  reportAsOf: number;
-}
-
-export interface ReporterInfo {
-  role: Role;
-  name: string;
-  addedAt: number;
-}
-
-/**
- * A single entry in a vault's withdrawal queue.
- *
- * @remarks
- * Returned by {@link CoveredVaultClient.getPendingWithdrawals}. The queue is
- * ordered oldest-first by the vault contract; entries are removed when the
- * withdrawal is processed or cancelled.
- */
-export interface WithdrawalRequest {
-  /** Stellar address of the account that queued the withdrawal. */
-  to: string;
-  /** Amount requested, in smallest units (7 decimal places for classic assets). */
-  amount: bigint;
-  /** Ledger sequence number at which the request was submitted. */
-  submittedAt: number;
 }
 
 /** bps value the contract returns when supply is zero. */
