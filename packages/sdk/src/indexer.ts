@@ -90,6 +90,40 @@ export interface IndexerNetwork {
   reporter_registry_id: string;
 }
 
+/** Outcome of the state reconciler's latest run over one asset. */
+export interface IndexerReconcileAsset {
+  sac: string;
+  /** RFC 3339 time of the last run that covered this asset, or null before the first. */
+  last_run_at: string | null;
+  /** Whether that run completed ("ok") or returned an error ("failed"). */
+  outcome: "ok" | "failed";
+  /** Supply rows the run found newer than ingestion had and stored. */
+  recovered_supply?: number;
+  /** Report rows the run found newer than ingestion had and stored. */
+  recovered_reports?: number;
+  /** The job's error, when outcome is "failed". */
+  error?: string | null;
+}
+
+/**
+ * What the indexer's state reconciler has done recently. The reconciler reads
+ * each listed asset's latest supply and report back from the coverage ledger
+ * and stores anything newer than event ingestion has, which repairs gaps
+ * longer than RPC's event retention.
+ */
+export interface IndexerReconcileStatus {
+  /** False when the job is switched off or has not started. */
+  running: boolean;
+  /** RECONCILE_INTERVAL in seconds. */
+  interval_seconds?: number;
+  /** RFC 3339 time of the last completed run, successful or not, or null. */
+  last_run_at: string | null;
+  /** Outcome of that run, or null before the first one finishes. */
+  last_run_outcome?: "ok" | "failed" | null;
+  /** Per-asset detail for the latest run. */
+  assets?: IndexerReconcileAsset[];
+}
+
 export class IndexerError extends Error {
   constructor(
     readonly status: number,
@@ -186,6 +220,27 @@ export class IndexerClient {
   /** GET /healthz. */
   health(opts?: RequestOptions): Promise<IndexerHealth> {
     return this.get(`/healthz`, opts);
+  }
+
+  /**
+   * GET /v1/reconcile, optionally narrowed to one asset.
+   *
+   * The endpoint is newer than the rest of the API, so a deployment that does
+   * not serve it answers 404. That is reported as `null` — nothing is known
+   * about the reconciler — rather than thrown, because an older indexer is not
+   * a failure of the page asking.
+   */
+  async reconcileStatus(
+    sac?: string,
+    opts?: RequestOptions,
+  ): Promise<IndexerReconcileStatus | null> {
+    const query = sac ? `?asset=${encodeURIComponent(sac)}` : "";
+    try {
+      return await this.get<IndexerReconcileStatus>(`/v1/reconcile${query}`, opts);
+    } catch (err) {
+      if (err instanceof IndexerError && err.status === 404) return null;
+      throw err;
+    }
   }
 
   async registerWebhook(
