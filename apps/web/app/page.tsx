@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useCallback, useRef, useState } from "react";
 import { useEffect, useRef, useState } from "react";
 import { AssetCard } from "@/components/AssetCard";
-import { Skeleton, nowSecs } from "@/components/ui";
+import { CoverageLegend, Skeleton, nowSecs } from "@/components/ui";
 import { config } from "@/lib/config";
 import { loadAssets, type AssetView } from "@/lib/data";
 import { useAutoRefresh, useRefreshIntervalSetting } from "@/lib/refresh-interval";
@@ -72,6 +72,8 @@ export default function Home() {
           contract can refuse an asset that falls below the line.
         </p>
       </section>
+
+      <CoverageLegend />
 
       <div className="spread mt">
         <h2 style={{ margin: 0 }}>Listed assets</h2>

@@ -53,5 +53,6 @@ the ratio.
 
 Readings do not expire on-chain; they age. `coverage()` keeps returning the
 last figures, and the caller decides how old is too old through `max_age`.
-The app labels a reading **stale** when the report is more than 31 days old,
-which matches a monthly reporting cycle.
+The app labels a reading **stale** when the report or the supply snapshot is
+more than the SDK's `DEFAULT_MAX_AGE_SECONDS` (seven days) old. Open a status
+pill for the rule and a link to [coverage math](coverage-math.md).
