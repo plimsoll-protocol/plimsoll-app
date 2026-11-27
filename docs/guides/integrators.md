@@ -46,6 +46,29 @@ pub fn require_covered(env: &Env, ledger: &Address, asset: &Address) {
 `reserves`, `tier`, timestamps), or `None`. Use it to scale a loan-to-value
 ratio, for example.
 
+## Embed a coverage watchlist
+
+The static app includes an iframe-friendly watchlist at `/widget/`. Pass one
+`sac` query parameter per Stellar Asset Contract address. It shows each
+asset's coverage status, refreshes every 60 seconds, and follows the viewer's
+system light or dark theme. Invalid addresses are ignored, and the widget
+accepts up to 20 unique assets per URL.
+
+```html
+<iframe
+  src="https://your-plimsoll-site.example/widget/?sac=CCHPT4TEJDPZQDSUVW3NP6A35ROGV4WEFZKT45SKWYCFZSUB7R5HIM7S&sac=CBSQEFG73RMUVEZ56EFEBCJ23WZNF6FFYXEAJKYG6SZCLKDZ5B2YXGHS"
+  width="100%"
+  height="240"
+  title="Plimsoll coverage watchlist"
+  loading="lazy"
+  style="border: 0"
+></iframe>
+```
+
+Add or remove repeated `sac` parameters to customize the list. Use the
+deployed app's base path in the iframe URL when the static site is hosted
+under a subdirectory.
+
 ## Test against it locally
 
 Register the real contracts in your tests from the wasm in

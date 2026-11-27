@@ -5,6 +5,8 @@ import { FormEvent, useEffect, useState } from "react";
 import { IndexerError } from "@plimsoll/sdk";
 import type { IndexerWebhook } from "@plimsoll/sdk";
 import { indexer, loadAssets, type AssetView } from "@/lib/data";
+import { RefreshControls } from "@/components/RefreshControls";
+import { useRefreshIntervalSetting } from "@/lib/refresh-interval";
 
 const INDEXER_WEBHOOK_DOCS =
   "https://plimsoll-protocol.gitbook.io/plimsoll-protocol-docs/indexer/webhooks";
@@ -42,6 +44,21 @@ function validateThreshold(pct: string): string | null {
   return null;
 }
 
+/** The outcome of a webhook test, announced to screen readers when it appears. */
+function TestNotice({ state }: { state: WebhookTestState | undefined }) {
+  const notice = noticeFor(state);
+  if (!notice) return null;
+  return (
+    <p
+      className={`notice ${notice.tone === "ok" ? "notice-ok" : "notice-bad"}`}
+      role={notice.tone === "ok" ? "status" : "alert"}
+      style={{ marginTop: 8, fontSize: "0.85rem" }}
+    >
+      {notice.text}
+    </p>
+  );
+}
+
 export default function SettingsPage() {
   const [assets, setAssets] = useState<AssetView[]>([]);
   const [form, setForm] = useState<FormState>({ url: "", thresholdPct: "100", sac: "" });
@@ -49,6 +66,7 @@ export default function SettingsPage() {
   const [thresholdError, setThresholdError] = useState<string | null>(null);
   const [submitState, setSubmitState] = useState<SubmitState>({ kind: "idle" });
   const [webhooks, setWebhooks] = useState<IndexerWebhook[] | null>(null);
+  const [intervalValue, setIntervalValue] = useRefreshIntervalSetting();
 
   const indexerAvailable = indexer !== null;
 
@@ -102,11 +120,19 @@ export default function SettingsPage() {
     }
   }
 
+  async function handleTest(id: string) {
+    if (!indexer || tests[id]?.kind === "busy") return;
+    setTests((prev) => ({ ...prev, [id]: { kind: "busy" } }));
+    const next = await runWebhookTest(indexer, id);
+    setTests((prev) => ({ ...prev, [id]: next }));
+  }
+
   async function handleDelete(id: string) {
     if (!indexer) return;
     try {
       await indexer.deleteWebhook(id);
       setWebhooks((prev) => (prev ? prev.filter((w) => w.id !== id) : prev));
+      setTests((prev) => Object.fromEntries(Object.entries(prev).filter(([key]) => key !== id)));
     } catch {
       // keep the list as-is; the webhook may still be active
     }
@@ -238,15 +264,29 @@ export default function SettingsPage() {
                     <td>{w.sac ? `${w.sac.slice(0, 8)}…` : "All"}</td>
                     <td className="num">{new Date(w.created_at).toISOString().slice(0, 10)}</td>
                     <td>
-                      <button
-                        type="button"
-                        className="secondary"
-                        style={{ padding: "2px 10px", fontSize: "0.85rem" }}
-                        onClick={() => void handleDelete(w.id)}
-                        aria-label={`Delete webhook ${w.url}`}
-                      >
-                        Delete
-                      </button>
+                      <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                        <button
+                          type="button"
+                          className="secondary"
+                          style={{ padding: "2px 10px", fontSize: "0.85rem" }}
+                          onClick={() => void handleTest(w.id)}
+                          disabled={tests[w.id]?.kind === "busy"}
+                          aria-busy={tests[w.id]?.kind === "busy"}
+                          aria-label={`Send test payload to ${w.url}`}
+                        >
+                          {buttonLabel(tests[w.id])}
+                        </button>
+                        <button
+                          type="button"
+                          className="secondary"
+                          style={{ padding: "2px 10px", fontSize: "0.85rem" }}
+                          onClick={() => void handleDelete(w.id)}
+                          aria-label={`Delete webhook ${w.url}`}
+                        >
+                          Delete
+                        </button>
+                      </div>
+                      <TestNotice state={tests[w.id]} />
                     </td>
                   </tr>
                 ))}
@@ -259,6 +299,23 @@ export default function SettingsPage() {
           No webhooks registered yet.
         </p>
       ) : null}
+
+      <h2>Live data refresh</h2>
+      <p className="sub" style={{ maxWidth: 640 }}>
+        How often the asset, reporter and home pages re-fetch live data automatically. The setting
+        is stored in your browser, so it survives reloads, and applies immediately without one.
+      </p>
+      <div className="mt" style={{ maxWidth: 640 }}>
+        <RefreshControls
+          interval={intervalValue}
+          onChange={setIntervalValue}
+          onRefresh={() => {}}
+        />
+      </div>
+      <p className="sub" style={{ marginTop: 12 }}>
+        Off disables automatic refresh entirely; the Refresh button on each page still fetches on
+        demand.
+      </p>
 
       <p className="sub" style={{ marginTop: 24 }}>
         <Link href="/">Back to assets</Link>

@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useRef } from "react";
+import { logger } from "@/lib/logger";
 
 export default function ErrorPage({
   error,
@@ -13,7 +14,7 @@ export default function ErrorPage({
   const heading = useRef<HTMLHeadingElement>(null);
 
   useEffect(() => {
-    console.error("Page render failed", error);
+    logger.error("Page render failed", error);
     heading.current?.focus();
   }, [error]);
 

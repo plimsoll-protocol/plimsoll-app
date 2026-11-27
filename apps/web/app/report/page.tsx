@@ -1,5 +1,6 @@
 "use client";
 
+import dynamic from "next/dynamic";
 import { useEffect, useState } from "react";
 import {
   ContractCallError,
@@ -18,8 +19,13 @@ import { WalletError, connectWallet, signXdr } from "@/lib/wallet";
 type Status =
   | { kind: "idle" }
   | { kind: "busy"; msg: string }
-  | { kind: "ok"; hash: string; tier: Tier }
+  | { kind: "ok"; hash: string; tier: Tier; sac: string }
   | { kind: "err"; msg: string };
+
+const ReportForm = dynamic(() => import("./ReportForm"), {
+  ssr: false,
+  loading: () => <FormSkeleton />,
+});
 
 export default function ReportPage() {
   const [assets, setAssets] = useState<AssetView[]>([]);
@@ -31,6 +37,20 @@ export default function ReportPage() {
   const [docHash, setDocHash] = useState("");
   const [tier, setTier] = useState<Tier | null | undefined>(undefined);
   const [status, setStatus] = useState<Status>({ kind: "idle" });
+  const [modalOpen, setModalOpen] = useState(false);
+  const [estimatedFee, setEstimatedFee] = useState<number | null>(null);
+  const [isEstimatingFee, setIsEstimatingFee] = useState(false);
+
+  useEffect(() => {
+    if (!modalOpen) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape" && status.kind !== "busy") {
+        setModalOpen(false);
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [modalOpen, status.kind]);
 
   useEffect(() => {
     loadAssets()
@@ -92,10 +112,41 @@ export default function ReportPage() {
   const selected = assets.find((a) => a.sac === sac);
   const amountCheck = checkAmount(amount, selected?.supply?.amount, selected?.code);
   const preview = amountCheck.kind === "valid" ? amountCheck.preview : null;
+  const docUriCheck = docUri.trim() ? validateDocUri(docUri) : null;
 
-  const submit = async (e: React.FormEvent) => {
+  const openModal = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!address || !tier || amountCheck.kind !== "valid" || preview?.warning) return;
+    if (!docUriCheck?.valid) return;
+    setModalOpen(true);
+    setIsEstimatingFee(true);
+    setEstimatedFee(null);
+    try {
+      const units = amountCheck.units;
+      const asOfSecs = Math.floor(new Date(`${asOf}T00:00:00Z`).getTime() / 1000);
+      const op = contracts.postReserveOperation({
+        reporter: address,
+        sac,
+        amount: units,
+        asOf: asOfSecs,
+        docHash,
+        docUri,
+      });
+      const fee = await contracts.estimateFee(op);
+      setEstimatedFee(fee);
+    } catch {
+      setEstimatedFee(0);
+    } finally {
+      setIsEstimatingFee(false);
+    }
+  };
+
+  const confirmSign = async () => {
+    if (!address || !tier || amountCheck.kind !== "valid" || preview?.warning) return;
+    setModalOpen(false);
+    // Set once the wallet signs, so a failure after that point can take the
+    // optimistic row back off the asset page.
+    let pendingHash: string | null = null;
     try {
       const units = amountCheck.units;
       const asOfSecs = Math.floor(new Date(`${asOf}T00:00:00Z`).getTime() / 1000);
@@ -109,14 +160,28 @@ export default function ReportPage() {
         amount: units,
         asOf: asOfSecs,
         docHash,
-        docUri,
+        docUri: docUriCheck.uri,
       });
       setStatus({ kind: "busy", msg: "Waiting for your signature…" });
       const signed = await signXdr(xdr, address);
+      pendingHash = txHashOf(signed, config.network.networkPassphrase);
+      // Show the report on the asset page now, marked pending; the asset page
+      // swaps it for the confirmed row when the indexer reports the event.
+      addPending({
+        txHash: pendingHash,
+        sac,
+        tier,
+        amount: units.toString(),
+        asOf: asOfSecs,
+        reporter: address,
+        docHash,
+        docUri,
+      });
       setStatus({ kind: "busy", msg: "Submitting…" });
       const hash = await signing.submitReserveReport(signed);
       setStatus({ kind: "ok", hash, tier });
     } catch (err) {
+      if (pendingHash) removePending([pendingHash]);
       const msg = err instanceof WalletError || err instanceof Error ? err.message : String(err);
       setStatus({ kind: "err", msg: friendly(err, msg) });
     }
@@ -128,7 +193,7 @@ export default function ReportPage() {
     sac &&
     amountCheck.kind === "valid" &&
     !preview?.warning &&
-    docUri &&
+    docUriCheck?.valid &&
     /^[0-9a-f]{64}$/.test(docHash) &&
     status.kind !== "busy";
 
@@ -166,7 +231,7 @@ export default function ReportPage() {
         )}
       </div>
 
-      <form className="stack mt" onSubmit={submit}>
+      <form className="stack mt" onSubmit={openModal}>
         <label>
           Asset
           <select value={sac} onChange={(e) => setSac(e.target.value)} required>
@@ -252,7 +317,14 @@ export default function ReportPage() {
             placeholder="https://…"
             required
             maxLength={256}
+            aria-invalid={docUriCheck !== null && !docUriCheck.valid}
+            aria-describedby={docUriCheck && !docUriCheck.valid ? "doc-uri-error" : undefined}
           />
+          {docUriCheck && !docUriCheck.valid ? (
+            <span className="field-error" id="doc-uri-error" role="alert">
+              {docUriCheck.message}
+            </span>
+          ) : null}
         </label>
         <div>
           <label>
@@ -292,10 +364,115 @@ export default function ReportPage() {
         </div>
         <div>
           <button type="submit" disabled={!ready}>
-            Sign and post
+            Review and sign
           </button>
         </div>
       </form>
+
+      {modalOpen ? (
+        <div
+          role="presentation"
+          onClick={() => status.kind !== "busy" && setModalOpen(false)}
+          style={{
+            position: "fixed",
+            inset: 0,
+            backgroundColor: "rgb(15 29 43 / 55%)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            zIndex: 100,
+            padding: 16,
+          }}
+        >
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="report-dialog-title"
+            className="wallet-dialog"
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              margin: 0,
+              maxHeight: "90vh",
+              overflowY: "auto",
+            }}
+          >
+            <div className="wallet-dialog-head">
+              <h2 id="report-dialog-title">Review &amp; sign report</h2>
+              <button
+                type="button"
+                className="wallet-dialog-close"
+                onClick={() => setModalOpen(false)}
+                disabled={status.kind === "busy"}
+                aria-label="Close"
+              >
+                Close
+              </button>
+            </div>
+            <div className="wallet-dialog-body">
+              <p className="sub" style={{ marginTop: 0 }}>
+                Review report details and estimated resource fee before signing with your wallet.
+              </p>
+              <div className="card" style={{ padding: 14, display: "grid", gap: 10 }}>
+                <div>
+                  <div className="stat-label">Asset</div>
+                  <div className="stat-value" style={{ fontSize: "1.05rem" }}>
+                    {selected?.code} ({shortAddress(sac, 6)})
+                  </div>
+                </div>
+                <div>
+                  <div className="stat-label">Reserves to report</div>
+                  <div className="stat-value" style={{ fontSize: "1.05rem" }}>
+                    {amount} {selected?.code}
+                  </div>
+                </div>
+                <div>
+                  <div className="stat-label">As of date (UTC)</div>
+                  <div className="stat-value" style={{ fontSize: "1.05rem" }}>
+                    {asOf}
+                  </div>
+                </div>
+                <div>
+                  <div className="stat-label">Document SHA-256</div>
+                  <div className="mono break" style={{ fontSize: "0.85rem" }}>
+                    {shortAddress(docHash, 8)}
+                  </div>
+                </div>
+                <div style={{ borderTop: "1px solid var(--line)", paddingTop: 10 }}>
+                  <div className="stat-label">Estimated resource fee</div>
+                  <div
+                    className="stat-value"
+                    id="report-signing-fee-estimate"
+                    style={{ fontSize: "1.1rem", color: "var(--brand)" }}
+                  >
+                    {isEstimatingFee ? "Estimating…" : `${estimatedFee ?? 0} stroops`}
+                  </div>
+                  <div className="sub" style={{ fontSize: "0.8rem", marginTop: 2 }}>
+                    Calculated via Soroban simulation. Network base fee (100 stroops) applies at
+                    submission.
+                  </div>
+                </div>
+              </div>
+              <div className="row mt" style={{ gap: 10 }}>
+                <button
+                  type="button"
+                  onClick={confirmSign}
+                  disabled={status.kind === "busy" || isEstimatingFee}
+                >
+                  Confirm and sign
+                </button>
+                <button
+                  type="button"
+                  className="secondary"
+                  onClick={() => setModalOpen(false)}
+                  disabled={status.kind === "busy"}
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      ) : null}
 
       <div aria-live="polite" className="mt" style={{ maxWidth: 680 }}>
         {status.kind === "busy" ? <p className="notice notice-info">{status.msg}</p> : null}
@@ -306,28 +483,69 @@ export default function ReportPage() {
             <a href={explorer.tx(status.hash)} target="_blank" rel="noreferrer">
               View transaction
             </a>
-            . <CopyButton value={status.hash} label="transaction hash" /> The dashboard updates once
-            the indexer picks up the event.
+            . <CopyButton value={status.hash} label="transaction hash" /> The{" "}
+            <Link href={`/asset/?sac=${status.sac}`}>asset page</Link> shows it as pending until the
+            indexer picks up the event.
           </p>
         ) : null}
       </div>
+      <ReportForm />
     </>
   );
 }
 
-/**
- * Why there is no ratio to preview: the form divides by the latest supply
- * snapshot, and neither a missing snapshot nor an empty one can be divided by.
- */
-function noSupplyNote(asset: AssetView | undefined): string {
-  if (!asset) return "No asset selected yet, so there is no supply to compare against.";
-  if (asset.supply) {
-    return `${asset.code}'s latest supply snapshot is zero, so there is no ratio to preview. With nothing circulating, reserves have nothing to cover.`;
-  }
-  return `No supply snapshot for ${asset.code} yet, so there is no ratio to preview. The supply poster records one for each listed asset; the preview appears once it lands.`;
+function FormSkeleton() {
+  return (
+    <div
+      className="mt"
+      aria-busy="true"
+      aria-label="Loading the report form"
+      style={{ maxWidth: 680 }}
+    >
+      <div className="card" style={{ display: "grid", gap: 12 }}>
+        <Bar height={24} width="40%" />
+        <Bar height={14} width="70%" />
+      </div>
+      <div className="mt" style={{ display: "grid", gap: 16 }}>
+        {[0, 1, 2, 3].map((i) => (
+          <div key={i} style={{ display: "grid", gap: 6 }}>
+            <Bar height={14} width="22%" />
+            <Bar height={42} />
+          </div>
+        ))}
+      </div>
+    </div>
+  );
 }
 
-function friendly(e: unknown, fallback: string): string {
-  const code = e instanceof ContractCallError ? e.code : undefined;
-  return (code !== undefined && describeError(code, "ledger")) || fallback;
+export const ERRORS: Record<number, string> = {
+  [LedgerError.NotAStellarAsset]: "That address is not a Stellar Asset Contract.",
+  [LedgerError.AlreadyListed]: "This asset is already listed.",
+  [LedgerError.AssetNotListed]: "This asset is not listed on the coverage ledger.",
+  [LedgerError.NotSupplyPoster]: "This account is not a registered supply poster.",
+  [LedgerError.NotReporter]:
+    "This account is not the issuer and is not a registered auditor or transcriber.",
+  [LedgerError.InvalidAmount]: "Reserves cannot be negative.",
+  [LedgerError.FutureLedger]: "The supply ledger is in the future.",
+  [LedgerError.StaleLedger]: "The supply ledger is not newer than the stored one.",
+  [LedgerError.FutureTimestamp]: "The as-of date is in the future.",
+  [LedgerError.StaleReport]:
+    "There is already a report at this tier with the same or a later as-of date.",
+  [LedgerError.InvalidUri]: "The document URL is empty or longer than 256 characters.",
+  [LedgerError.ImplausibleAmount]:
+    "The amount is outside 0.01% to 10,000% of the current supply and is likely a unit mistake (entering whole units instead of smallest units, or vice versa).",
+  [LedgerError.TooManyReporters]:
+    "This asset already has the maximum of 4 active reporters at this tier.",
+};
+
+export function friendly(e: unknown, fallback: string): string {
+  const code =
+    e instanceof ContractCallError
+      ? e.code
+      : parseContractErrorCode(fallback);
+  return (code !== undefined && ERRORS[code]) || (code !== undefined && describeError(code, "ledger")) || fallback;
+}
+
+function Bar({ height, width = "100%" }: { height: number; width?: string }) {
+  return <div className="skeleton" style={{ height, width }} aria-hidden="true" />;
 }

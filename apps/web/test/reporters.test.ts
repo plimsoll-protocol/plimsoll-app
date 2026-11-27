@@ -1,13 +1,21 @@
 import { describe, expect, it } from "vitest";
 import type { IndexerReporter } from "@plimsoll/sdk";
 import {
+  DEFAULT_REPORTER_SORT,
+  DEFAULT_REPORTER_FILTER,
+  FILTER_PANEL_STORAGE_KEY,
   REPORTER_ROLES,
+  REPORTER_SORTS,
   ROLE_HEADINGS,
+  activeFilterCount,
+  filterReporters,
   groupReporters,
   isReporterRole,
   reputationOf,
   sortReporters,
   updatedAt,
+  writeFilterPanelOpen,
+  type FilterPanelStorage,
 } from "../lib/reporters";
 
 const reporter = (over: Partial<IndexerReporter> = {}): IndexerReporter => ({
@@ -47,6 +55,136 @@ describe("groupReporters", () => {
       reporter({ address: "GY" }),
     ]);
     expect(groups.flatMap((g) => g.reporters).map((r) => r.address)).toEqual(["GY"]);
+  });
+
+  it("orders each role with the chosen sort", () => {
+    const list = [
+      reporter({ address: "GC", name: "Alice", updated_at: "2026-01-01T00:00:00Z" }),
+      reporter({ address: "GE", name: "Carol", updated_at: "2026-03-01T00:00:00Z" }),
+      reporter({ address: "GF", name: "bob", updated_at: "2026-02-01T00:00:00Z" }),
+    ];
+    const names = (sort: (typeof REPORTER_SORTS)[number]) =>
+      groupReporters(list, sort)
+        .find((g) => g.role === "auditor")
+        ?.reporters.map((r) => r.name);
+
+    expect(names(DEFAULT_REPORTER_SORT)).toEqual(["Alice", "bob", "Carol"]);
+    expect(names("name-desc")).toEqual(["Carol", "bob", "Alice"]);
+    expect(names("recent")).toEqual(["Carol", "bob", "Alice"]);
+  });
+
+  it("puts reporters with no usable update time last", () => {
+    const groups = groupReporters(
+      [
+        reporter({ address: "GC", name: "Alice", updated_at: "" }),
+        reporter({ address: "GE", name: "Carol", updated_at: "2026-03-01T00:00:00Z" }),
+      ],
+      "recent",
+    );
+    expect(groups.find((g) => g.role === "auditor")?.reporters.map((r) => r.name)).toEqual([
+      "Carol",
+      "Alice",
+    ]);
+  });
+});
+
+describe("filterReporters", () => {
+  const list = [
+    reporter({ address: "GALICE", name: "Alice Audit" }),
+    reporter({ address: "GZOE", name: "Zoe Transcribe" }),
+  ];
+
+  it("matches a name or address case-insensitively", () => {
+    expect(filterReporters(list, "alice").map((r) => r.name)).toEqual(["Alice Audit"]);
+    expect(filterReporters(list, "gzoe").map((r) => r.name)).toEqual(["Zoe Transcribe"]);
+  });
+
+  it("ignores surrounding whitespace and keeps everyone for an empty query", () => {
+    expect(filterReporters(list, "  ").map((r) => r.name)).toEqual([
+      "Alice Audit",
+      "Zoe Transcribe",
+    ]);
+    expect(filterReporters(list, "  zoe  ").map((r) => r.name)).toEqual(["Zoe Transcribe"]);
+  });
+
+  it("returns nothing when no reporter matches", () => {
+    expect(filterReporters(list, "nobody")).toEqual([]);
+  });
+});
+
+describe("activeFilterCount", () => {
+  it("counts a non-empty search and a non-default sort", () => {
+    expect(activeFilterCount("", DEFAULT_REPORTER_SORT)).toBe(0);
+    expect(activeFilterCount("   ", DEFAULT_REPORTER_SORT)).toBe(0);
+    expect(activeFilterCount("alice", DEFAULT_REPORTER_SORT)).toBe(1);
+    expect(activeFilterCount("", "recent")).toBe(1);
+    expect(activeFilterCount("alice", "name-desc")).toBe(2);
+  });
+});
+
+describe("isReporterSort", () => {
+  it("accepts only the three supported orders", () => {
+    expect(REPORTER_SORTS.every(isReporterSort)).toBe(true);
+    expect(isReporterSort("recently-updated")).toBe(false);
+    expect(isReporterSort("")).toBe(false);
+  });
+});
+
+describe("sortReporters", () => {
+  const listed = () => [
+    reporter({ address: "GA", name: "Alice", reputation: 40 }),
+    reporter({ address: "GB", name: "Bob", reputation: 90 }),
+    reporter({ address: "GC", name: "Cara" }),
+    reporter({ address: "GD", name: "Dan", reputation: 40 }),
+  ];
+
+  it("sorts reputation high to low, with unscored reporters last", () => {
+    const out = sortReporters(listed(), "reputation", "desc");
+    expect(out.map((r) => r.address)).toEqual(["GB", "GA", "GD", "GC"]);
+  });
+
+  it("sorts reputation low to high, still keeping unscored reporters last", () => {
+    const out = sortReporters(listed(), "reputation", "asc");
+    expect(out.map((r) => r.address)).toEqual(["GA", "GD", "GB", "GC"]);
+  });
+
+  it("treats a non-numeric score as unavailable", () => {
+    const out = sortReporters(
+      [
+        reporter({ address: "GA", name: "Alice", reputation: Number.NaN }),
+        reporter({ address: "GB", name: "Bob", reputation: 5 }),
+      ],
+      "reputation",
+      "desc",
+    );
+    expect(out.map((r) => r.address)).toEqual(["GB", "GA"]);
+  });
+
+  it("sorts names in either direction without changing the input", () => {
+    const input = listed();
+    expect(sortReporters(input, "name", "asc").map((r) => r.name)).toEqual([
+      "Alice",
+      "Bob",
+      "Cara",
+      "Dan",
+    ]);
+    expect(sortReporters(input, "name", "desc").map((r) => r.name)).toEqual([
+      "Dan",
+      "Cara",
+      "Bob",
+      "Alice",
+    ]);
+    expect(input.map((r) => r.name)).toEqual(["Alice", "Bob", "Cara", "Dan"]);
+  });
+});
+
+describe("reputation display", () => {
+  it("reads a finite score and marks a missing one as unknown", () => {
+    expect(reputationOf(reporter({ reputation: 0 }))).toBe(0);
+    expect(reputationOf(reporter())).toBeNull();
+    expect(reputationOf(reporter({ reputation: Number.POSITIVE_INFINITY }))).toBeNull();
+    expect(reputationText(reporter({ reputation: 12 }))).toBe("12");
+    expect(reputationText(reporter())).toBe("—");
   });
 });
 
@@ -116,5 +254,115 @@ describe("updatedAt", () => {
     expect(updatedAt(undefined)).toBeNull();
     expect(updatedAt("")).toBeNull();
     expect(updatedAt("not a date")).toBeNull();
+  });
+});
+
+describe("matchesReporterQuery", () => {
+  it("searches name, address and role heading case-insensitively", () => {
+    const r = reporter({ name: "Alice Audit", address: "GABC", role: "auditor" });
+    expect(matchesReporterQuery(r, "alice")).toBe(true);
+    expect(matchesReporterQuery(r, "gabc")).toBe(true);
+    expect(matchesReporterQuery(r, "auditor")).toBe(true);
+    expect(matchesReporterQuery(r, "transcriber")).toBe(false);
+  });
+
+  it("matches everything for an empty or whitespace query", () => {
+    const r = reporter();
+    expect(matchesReporterQuery(r, "")).toBe(true);
+    expect(matchesReporterQuery(r, "   ")).toBe(true);
+  });
+});
+
+describe("filterReporters", () => {
+  const list = [
+    reporter({ address: "GB", name: "Bob", updated_at: "2026-01-01T00:00:00Z" }),
+    reporter({ address: "GA", name: "alice", updated_at: "2026-02-01T00:00:00Z" }),
+    reporter({ address: "GC", name: "Carol", updated_at: "not a date" }),
+  ];
+
+  it("sorts by name case-insensitively by default", () => {
+    expect(filterReporters(list, DEFAULT_REPORTER_FILTER).map((r) => r.name)).toEqual([
+      "alice",
+      "Bob",
+      "Carol",
+    ]);
+  });
+
+  it("sorts by most recently updated, with bad dates last", () => {
+    expect(filterReporters(list, { query: "", sort: "recent" }).map((r) => r.name)).toEqual([
+      "alice",
+      "Bob",
+      "Carol",
+    ]);
+  });
+
+  it("filters by a name fragment and leaves the input untouched", () => {
+    const input = [...list];
+    expect(filterReporters(list, { query: "bo", sort: "name" }).map((r) => r.name)).toEqual([
+      "Bob",
+    ]);
+    expect(list).toEqual(input);
+  });
+});
+
+describe("parseReporterSort", () => {
+  it("accepts the known sorts and falls back to name", () => {
+    expect(parseReporterSort("recent")).toBe("recent");
+    expect(parseReporterSort("name")).toBe("name");
+    expect(parseReporterSort("role")).toBe("name");
+    expect(parseReporterSort(null)).toBe("name");
+  });
+});
+
+describe("activeFilterCount", () => {
+  it("counts a search term and a non-default sort", () => {
+    expect(activeFilterCount(DEFAULT_REPORTER_FILTER)).toBe(0);
+    expect(activeFilterCount({ query: "  ", sort: "name" })).toBe(0);
+    expect(activeFilterCount({ query: "usdc", sort: "name" })).toBe(1);
+    expect(activeFilterCount({ query: "usdc", sort: "recent" })).toBe(2);
+  });
+});
+
+describe("filter panel state", () => {
+  const memory = (): FilterPanelStorage & { entries: Map<string, string> } => {
+    const entries = new Map<string, string>();
+    return {
+      entries,
+      getItem: (key) => entries.get(key) ?? null,
+      setItem: (key, value) => void entries.set(key, value),
+    };
+  };
+
+  it("round-trips the open state and treats a first visit as no state", () => {
+    const store = memory();
+    expect(readFilterPanelOpen(store)).toBeNull();
+    writeFilterPanelOpen(store, false);
+    expect(store.entries.get(FILTER_PANEL_STORAGE_KEY)).toBe("false");
+    expect(readFilterPanelOpen(store)).toBe(false);
+    writeFilterPanelOpen(store, true);
+    expect(readFilterPanelOpen(store)).toBe(true);
+  });
+
+  it("survives missing or corrupt storage", () => {
+    expect(readFilterPanelOpen(null)).toBeNull();
+    expect(() => writeFilterPanelOpen(undefined, true)).not.toThrow();
+    const throwing = {
+      getItem: () => {
+        throw new Error("blocked");
+      },
+      setItem: () => {
+        throw new Error("blocked");
+      },
+    };
+    expect(readFilterPanelOpen(throwing)).toBeNull();
+    expect(() => writeFilterPanelOpen(throwing, true)).not.toThrow();
+    const corrupt = memory();
+    corrupt.entries.set(FILTER_PANEL_STORAGE_KEY, "maybe");
+    expect(readFilterPanelOpen(corrupt)).toBeNull();
+  });
+
+  it("defaults open on desktop and closed on mobile", () => {
+    expect(defaultFilterPanelOpen(true)).toBe(true);
+    expect(defaultFilterPanelOpen(false)).toBe(false);
   });
 });

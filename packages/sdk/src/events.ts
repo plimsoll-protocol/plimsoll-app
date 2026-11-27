@@ -46,6 +46,13 @@ export type CoverageEvent = SupplyPostedEvent | ReportPostedEvent | CoverageChan
 /** Callback invoked for each event received from the stream. */
 export type CoverageEventCallback = (event: CoverageEvent) => void;
 
+/**
+ * Connection state of a coverage event stream. "live" means the connection is
+ * open, "paused" that it dropped and a reconnect is scheduled, and
+ * "connecting" that an attempt is in flight.
+ */
+export type CoverageStreamState = "connecting" | "live" | "paused";
+
 /** Options for {@link subscribeCoverageEvents}. */
 export interface SubscribeOptions {
   /**
@@ -62,6 +69,11 @@ export interface SubscribeOptions {
    */
   signal?: AbortSignal;
   /**
+   * Called whenever the stream's connection state changes, so a caller can say
+   * that live updates are paused and clear that when the stream comes back.
+   */
+  onStateChange?: (state: CoverageStreamState) => void;
+  /**
    * Optional factory for EventSource instances. Defaults to the global
    * `EventSource` constructor. Supply a mock in tests.
    */
@@ -70,6 +82,7 @@ export interface SubscribeOptions {
 
 /** Minimal EventSource interface used by the helper (testable). */
 export interface EventSourceLike {
+  onopen?: (() => void) | null;
   onmessage: ((ev: { data: string }) => void) | null;
   onerror: ((ev: unknown) => void) | null;
   close(): void;
@@ -111,17 +124,33 @@ export function subscribeCoverageEvents(
   callback: CoverageEventCallback,
   options: SubscribeOptions = {},
 ): CoverageSubscription {
-  const { initialBackoffMs = 1_000, maxBackoffMs = 30_000, signal, eventSourceFactory } = options;
+  const {
+    initialBackoffMs = 1_000,
+    maxBackoffMs = 30_000,
+    signal,
+    onStateChange,
+    eventSourceFactory,
+  } = options;
 
   let currentEs: EventSourceLike | null = null;
   let backoffMs = initialBackoffMs;
   let retryTimer: ReturnType<typeof setTimeout> | null = null;
   let stopped = false;
+  let state: CoverageStreamState | null = null;
+
+  // Only report a change in state, so a burst of errors cannot repeat "paused".
+  function setState(next: CoverageStreamState): void {
+    if (state === next) return;
+    state = next;
+    onStateChange?.(next);
+  }
 
   const url = `${indexerBase}/v1/assets/${encodeURIComponent(sac)}/events`;
 
   function connect(): void {
     if (stopped) return;
+
+    setState("connecting");
 
     const factory =
       eventSourceFactory ?? ((u: string): EventSourceLike => new EventSource(u) as EventSourceLike);
@@ -129,8 +158,19 @@ export function subscribeCoverageEvents(
     const es = factory(url);
     currentEs = es;
 
+    es.onopen = () => {
+      if (stopped || currentEs !== es) return;
+      // A connection that opened resets the back-off, so a link that flaps
+      // retries quickly again instead of waiting at the ceiling.
+      backoffMs = initialBackoffMs;
+      setState("live");
+    };
+
     es.onmessage = (ev) => {
-      if (stopped) return;
+      if (stopped || currentEs !== es) return;
+      // A message is proof the stream is up, for an EventSource that never
+      // fires onopen (an older browser or a minimal implementation).
+      setState("live");
       try {
         const parsed: unknown = JSON.parse(ev.data);
         if (isCoverageEvent(parsed)) {
@@ -142,10 +182,12 @@ export function subscribeCoverageEvents(
     };
 
     es.onerror = () => {
-      if (stopped) return;
+      if (stopped || currentEs !== es) return;
       es.close();
       currentEs = null;
+      setState("paused");
       retryTimer = setTimeout(() => {
+        retryTimer = null;
         backoffMs = Math.min(backoffMs * 2, maxBackoffMs);
         connect();
       }, backoffMs);

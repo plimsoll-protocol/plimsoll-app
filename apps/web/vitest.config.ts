@@ -8,6 +8,7 @@ export default defineConfig({
     alias: {
       "@plimsoll/sdk": root("../../packages/sdk/src/index.ts"),
       "@": root("."),
+      "next/navigation": root("test/__mocks__/next-navigation.ts"),
     },
   },
   test: { include: ["test/**/*.test.ts"] },

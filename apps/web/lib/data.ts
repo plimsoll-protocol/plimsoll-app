@@ -3,11 +3,29 @@ import {
   Tier,
   tierFromName,
   type IndexerAsset,
+  type IndexerHealth,
   type IndexerReporter,
   type IndexerSource,
   type IndexerToml,
 } from "@plimsoll/sdk";
 import { config } from "./config";
+import { exposePlimsollDebug, trackSdkCalls } from "./debug";
+
+export type IndexerStatusState = "ok" | "lagging" | "unreachable";
+
+export interface IndexerStatus {
+  state: IndexerStatusState;
+  health?: IndexerHealth;
+  lastEventAgeSeconds?: number;
+}
+import { logger } from "./logger";
+import {
+  REPORTS_PAGE_LIMIT,
+  collectReporterReports,
+  latestReportsBy,
+  summariseReporterAssets,
+  type ReporterAsset,
+} from "./reporter-profile";
 
 /**
  * How a figure reached us. Not the same as AssetView.source, which says which
@@ -83,9 +101,12 @@ const INDEXER_TIMEOUT_MS = 8_000;
 const fetchWithTimeout: typeof fetch = (input, init) =>
   fetch(input, { ...init, signal: AbortSignal.timeout(INDEXER_TIMEOUT_MS) });
 
-export const indexer = config.indexerUrl
+const indexerClient = config.indexerUrl
   ? new IndexerClient(config.indexerUrl, fetchWithTimeout)
   : null;
+export const indexer = indexerClient ? trackSdkCalls(indexerClient, "indexer") : null;
+
+exposePlimsollDebug({ contracts, indexer }, config);
 
 const secs = (iso: string) => Math.floor(new Date(iso).getTime() / 1000);
 
@@ -184,6 +205,107 @@ export async function loadReporters(): Promise<IndexerReporter[] | null> {
   return indexer.reporters();
 }
 
+/**
+ * Health and lag status of the indexer.
+ * Returns null immediately if no indexer URL is configured, making no network request.
+ */
+export async function loadIndexerStatus(
+  client: IndexerClient | null = indexer,
+  nowSecs = Math.floor(Date.now() / 1000),
+): Promise<IndexerStatus | null> {
+  if (!client || (client === indexer && !config.indexerUrl)) return null;
+  try {
+    const health = await client.health({ timeoutMs: 5_000 });
+    let lastEventAgeSeconds: number | undefined;
+    if (typeof health.last_event_age_seconds === "number") {
+      lastEventAgeSeconds = health.last_event_age_seconds;
+    } else if (typeof health.lag_seconds === "number") {
+      lastEventAgeSeconds = health.lag_seconds;
+    } else if (typeof health.last_event_at === "string") {
+      const parsed = Date.parse(health.last_event_at);
+      if (!Number.isNaN(parsed)) {
+        lastEventAgeSeconds = Math.max(0, Math.floor(nowSecs - parsed / 1000));
+      }
+    }
+
+    const isLagging =
+      health.status === "lagging" ||
+      (typeof lastEventAgeSeconds === "number" && lastEventAgeSeconds > 60) ||
+      (typeof health.lag_ledgers === "number" && health.lag_ledgers > 10);
+
+    if (isLagging) {
+      return {
+        state: "lagging",
+        health,
+        lastEventAgeSeconds,
+      };
+    }
+
+    if (health.status === "ok") {
+      return {
+        state: "ok",
+        health,
+        lastEventAgeSeconds,
+      };
+    }
+
+    return {
+      state: "unreachable",
+      health,
+      lastEventAgeSeconds,
+    };
+  } catch {
+    return {
+      state: "unreachable",
+    };
+  }
+}
+
+export interface ReporterAssets {
+  assets: ReporterAsset[];
+  /**
+   * "history": every report, from the indexer's reporter reports endpoint.
+   * "latest": that endpoint is not served by this indexer, so only the
+   * reporter's current latest report per tier on each asset was seen.
+   */
+  basis: "history" | "latest";
+  /** False when the history walk stopped before the oldest report. */
+  complete: boolean;
+}
+
+/**
+ * Every asset a reporter has posted at least one report on, with the asset's
+ * latest coverage. Null when no indexer is configured: the contracts keep only
+ * the latest report per tier, keyed by asset, so the chain cannot answer which
+ * assets an address has reported on.
+ */
+export async function loadReporterAssets(address: string): Promise<ReporterAssets | null> {
+  if (!indexer) return null;
+  const client = indexer;
+  const [assets, history] = await Promise.all([
+    client.listAssets(),
+    collectReporterReports((before) =>
+      client.reporterReports(address, { limit: REPORTS_PAGE_LIMIT, before }),
+    ).catch((err: unknown) => {
+      // An indexer older than the endpoint answers 404 for the route itself.
+      if (err instanceof IndexerError && err.status === 404) return null;
+      throw err;
+    }),
+  ]);
+  if (history) {
+    return {
+      assets: summariseReporterAssets(history.reports, assets),
+      basis: "history",
+      complete: history.complete,
+    };
+  }
+  return {
+    assets: summariseReporterAssets(latestReportsBy(address, assets), assets),
+    basis: "latest",
+    complete: true,
+  };
+}
+
 /** All assets: from the indexer when configured, otherwise from the chain. */
 export async function loadAssets(): Promise<AssetView[]> {
   if (indexer) {
@@ -193,7 +315,7 @@ export async function loadAssets(): Promise<AssetView[]> {
       // is listed on-chain; fall through to the contracts.
       if (listed.length > 0) return listed.map(fromIndexer);
     } catch (err) {
-      console.warn("Indexer unavailable, reading from chain", err);
+      logger.warn("Indexer unavailable, reading from chain", err);
     }
   }
   const all = await Promise.all(
@@ -207,7 +329,7 @@ export async function loadAsset(sac: string): Promise<AssetView | null> {
     try {
       return fromIndexer(await indexer.getAsset(sac));
     } catch (err) {
-      console.warn("Indexer unavailable, reading from chain", err);
+      logger.warn("Indexer unavailable, reading from chain", err);
     }
   }
   return loadFromChain(sac);
@@ -239,7 +361,7 @@ export async function loadReporterNames(
         for (const r of all) nameCache.set(r.address, r.name);
         for (const a of missing) if (!nameCache.has(a)) nameCache.set(a, null);
       } catch (err) {
-        console.warn("Indexer unavailable, reading reporter names from chain", err);
+        logger.warn("Indexer unavailable, reading reporter names from chain", err);
       }
     }
     const stillMissing = missing.filter((a) => !nameCache.has(a));
@@ -251,7 +373,7 @@ export async function loadReporterNames(
           nameCache.set(a, info?.name ?? null);
         } catch (err) {
           // Leave it uncached: a failed read is not evidence of no name.
-          console.warn(`Could not read the registry name for ${a}`, err);
+          logger.warn(`Could not read the registry name for ${a}`, err);
         }
       }),
     );

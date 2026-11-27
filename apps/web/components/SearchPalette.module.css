@@ -1,0 +1,159 @@
+/* Colours come from the CSS variables in app/globals.css, so dark mode follows. */
+
+.trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 36px;
+  padding: 4px 10px;
+  font-size: 0.9rem;
+}
+
+.kbd {
+  font-family: var(--mono);
+  font-size: 0.75rem;
+  line-height: 1;
+  padding: 3px 6px;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  background: var(--paper);
+  color: var(--ink-2);
+}
+
+/* On a phone there is no keyboard shortcut to advertise. */
+@media (max-width: 760px) {
+  .kbd {
+    display: none;
+  }
+}
+
+.backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding: 10vh 12px 12px;
+  background: rgb(8 14 22 / 55%);
+}
+
+.panel {
+  width: 100%;
+  max-width: 640px;
+  max-height: 100%;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--ink);
+  box-shadow: 0 18px 48px rgb(0 0 0 / 35%);
+}
+
+.bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px;
+  border-bottom: 1px solid var(--line);
+}
+
+.field {
+  flex: 1;
+  min-width: 0;
+  padding: 10px 12px;
+  font: inherit;
+  color: var(--ink);
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+
+.field:focus-visible {
+  outline: 2px solid var(--sea);
+  outline-offset: 1px;
+}
+
+.close {
+  flex: none;
+  min-height: 36px;
+  padding: 4px 10px;
+  font-family: var(--mono);
+  font-size: 0.8rem;
+}
+
+.list {
+  margin: 0;
+  padding: 6px;
+  list-style: none;
+  overflow-y: auto;
+}
+
+.option {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px;
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+/* Selected is shown by colour and by a left bar, so it does not rely on colour alone. */
+.option[aria-selected="true"] {
+  background: var(--sea-bg);
+  box-shadow: inset 3px 0 0 var(--sea);
+}
+
+.kind {
+  flex: none;
+  min-width: 64px;
+  font-size: 0.72rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--ink-3);
+}
+
+.text {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.title {
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.detail {
+  font-size: 0.85rem;
+  color: var(--ink-2);
+  overflow-wrap: anywhere;
+}
+
+.out {
+  flex: none;
+  color: var(--ink-3);
+}
+
+.note {
+  margin: 0;
+  padding: 10px 16px 14px;
+  font-size: 0.9rem;
+  color: var(--ink-2);
+}
+
+@media (max-width: 480px) {
+  .kind {
+    display: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .option {
+    transition: none;
+  }
+}

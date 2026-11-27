@@ -26,6 +26,21 @@ export default defineConfig([
       // Two pages set state at the start of an effect (mainnet/, report/).
       // Restructuring them changes behaviour, so it is reported, not blocking.
       "react-hooks/set-state-in-effect": "warn",
+      // Keep console out of shipped code. The structured logger in
+      // apps/web/lib/logger.ts is the single allowed caller.
+      "no-console": "error",
     },
+  },
+
+  // The structured logger is the one module allowed to call console.
+  {
+    files: ["apps/web/lib/logger.ts"],
+    rules: { "no-console": "off" },
+  },
+
+  // Build scripts are not shipped to the browser.
+  {
+    files: ["apps/web/scripts/apply-csp.mjs"],
+    rules: { "no-console": "off" },
   },
 ]);

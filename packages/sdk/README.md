@@ -53,6 +53,9 @@ console.log(ok ? "accept" : "refuse");
 `TESTNET` is the v0.1 testnet deployment. For another network, pass your own
 `NetworkConfig` (`rpcUrl`, `networkPassphrase`, `coverageLedgerId`,
 `reporterRegistryId`). A failed simulation throws `ContractCallError`.
+To estimate resource fees before signing, use `estimateFee(operation)` or
+`plimsoll.estimateFee(operation)`, which returns the fee in stroops or `0` on
+simulation failure.
 
 ## Query the indexer
 
@@ -78,6 +81,27 @@ for (const asset of await indexer.listAssets(Tier.IssuerSigned)) {
 `IndexerClient` takes an optional `fetch` implementation as its second
 argument. A non-2xx response throws `IndexerError`, which carries the HTTP
 `status`.
+
+### Stream new reports
+
+`indexer.streamReports(sac)` returns an async iterable of new reserve reports
+for one asset, fed by the indexer's server-sent events, so a `for await` loop
+can follow an asset live. Leaving the loop (`break`, `return()`, or an
+`AbortSignal` passed as `{ signal }`) closes the underlying `EventSource`. A
+dropped connection reconnects on its own with back-off. Reports that arrive
+while your loop is busy are kept in order, up to `maxBuffered` (default 1 000);
+past that the iterator throws `ReportStreamOverflowError` instead of dropping
+reports silently. The stream needs an indexer that serves
+`GET /v1/assets/{sac}/events`.
+### Link to one historical report
+
+`indexer.getReportBySeq(sac, seq)` fetches a single report by its sequence
+number, for linking from the indexer's audit trail to the report it records. It
+resolves `null` when that asset has no report with that `seq`. An unknown asset
+throws `IndexerError` (404), as `getAsset` does, and a `seq` that is not a
+non-negative integer throws `RangeError` before any request is made. It needs an
+indexer that serves `GET /v1/assets/{sac}/reports/{seq}`; an older indexer
+answers 404, which reads as `null`.
 
 ## Verify a figure
 

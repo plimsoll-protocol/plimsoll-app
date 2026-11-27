@@ -123,6 +123,8 @@ export function roleLabel(role: Role): string {
       return "Auditor";
     case Role.Transcriber:
       return "Transcriber";
+    case Role.Watcher:
+      return "Watcher";
     case Role.SupplyPoster:
       return "Supply poster";
     default:

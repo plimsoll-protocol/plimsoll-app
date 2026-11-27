@@ -113,7 +113,7 @@ const ok = await plimsoll.isCovered(TESTNET.assets.PUSD.sac, 10_000, 7 * 86_400,
 | `NEXT_PUBLIC_REPORTER_REGISTRY_ID` | testnet id | reporter-registry contract |
 | `NEXT_PUBLIC_INDEXER_URL` | hosted testnet indexer | Indexer base URL; `none` reads from chain only |
 | `NEXT_PUBLIC_CHAIN_ASSETS` | PUSD,USDC SACs | Assets shown when reading from chain |
-| `NEXT_PUBLIC_EXPLORER_URL` | stellar.expert testnet | Explorer links |
+| `NEXT_PUBLIC_EXPLORER_URL` | Stellar Expert for the network passphrase | Explorer links |
 | `NEXT_PUBLIC_BASE_PATH` | empty | Set to `/plimsoll-app` for GitHub Pages |
 
 ## Contributing

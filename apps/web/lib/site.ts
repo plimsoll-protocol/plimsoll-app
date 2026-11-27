@@ -11,10 +11,12 @@ export const PUBLIC_ROUTES = [
   "/about/",
   "/asset/",
   "/asset/history/",
+  "/compare/",
   "/integrate/",
   "/list/",
   "/mainnet/",
   "/report/",
+  "/reporter/",
   "/reporters/",
   "/settings/",
 ] as const;

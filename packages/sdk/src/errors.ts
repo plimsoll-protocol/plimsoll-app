@@ -11,6 +11,8 @@ export enum LedgerError {
   FutureTimestamp = 9,
   StaleReport = 10,
   InvalidUri = 11,
+  ImplausibleAmount = 12,
+  TooManyReporters = 13,
 }
 
 /** Errors of the reporter-registry contract. */
@@ -65,6 +67,10 @@ const MESSAGES: Record<ContractName, Record<number, string>> = {
     [LedgerError.StaleReport]:
       "There is already a report at this tier with the same or a later as-of date.",
     [LedgerError.InvalidUri]: "The document URL is empty or longer than 256 characters.",
+    [LedgerError.ImplausibleAmount]:
+      "The amount is outside 0.01% to 10,000% of the current supply and is likely a unit mistake (entering whole units instead of smallest units, or vice versa).",
+    [LedgerError.TooManyReporters]:
+      "This asset already has the maximum of 4 active reporters at this tier.",
   },
   registry: {
     [RegistryError.ReporterNotFound]: "That address is not a registered reporter.",

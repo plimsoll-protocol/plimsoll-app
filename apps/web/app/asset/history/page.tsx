@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
+import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ago, bpsToPercent, tierLabel, tierFromName } from "@plimsoll/sdk";
 import type { IndexerReport } from "@plimsoll/sdk";
 import { Skeleton, nowSecs } from "@/components/ui";
@@ -164,7 +164,7 @@ function HistoryDetail() {
             Showing {rows.length} report{rows.length !== 1 ? "s" : ""} from {toISODate(range.from)}{" "}
             to {toISODate(range.to)}.
           </p>
-          <HistoryChart rows={rows} />
+          <LazyHistoryChart rows={rows} />
           <div className="table-wrap" style={{ marginTop: 16 }}>
             <table>
               <thead>
@@ -222,6 +222,40 @@ interface ChartRow {
   bps: number | null;
 }
 
+/**
+ * Wraps HistoryChart in an Intersection Observer so the SVG is only rendered
+ * and computed once the container scrolls into the viewport. On SSR (and in
+ * test environments where IntersectionObserver is unavailable) the chart is
+ * rendered immediately.
+ */
+function LazyHistoryChart({ rows }: { rows: ChartRow[] }) {
+  const containerRef = useRef<HTMLDivElement>(null);
+  const [visible, setVisible] = useState(typeof IntersectionObserver === "undefined");
+
+  useEffect(() => {
+    if (typeof IntersectionObserver === "undefined") return;
+    const el = containerRef.current;
+    if (!el) return;
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        if (entry?.isIntersecting) {
+          setVisible(true);
+          observer.disconnect();
+        }
+      },
+      { rootMargin: "200px" },
+    );
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
+
+  return (
+    <div ref={containerRef} style={{ minHeight: 160 }}>
+      {visible ? <HistoryChart rows={rows} /> : null}
+    </div>
+  );
+}
+
 function HistoryChart({ rows }: { rows: ChartRow[] }) {
   const withBps = rows.filter((r): r is ChartRow & { bps: number } => r.bps !== null);
   if (withBps.length === 0) return null;
@@ -245,12 +279,13 @@ function HistoryChart({ rows }: { rows: ChartRow[] }) {
   const y100 = cy(10_000);
 
   return (
-    <svg
-      viewBox={`0 0 ${W} ${H}`}
-      style={{ width: "100%", maxWidth: W, marginTop: 16, display: "block" }}
-      role="img"
-      aria-label="Coverage BPS over time"
-    >
+    <div className="chart" style={{ maxWidth: W, marginTop: 16 }}>
+      <svg
+        viewBox={`0 0 ${W} ${H}`}
+        style={{ width: "100%", display: "block" }}
+        role="img"
+        aria-label="Coverage BPS over time"
+      >
       {/* 100% reference line */}
       {y100 >= PAD.top && y100 <= PAD.top + plotH ? (
         <line
@@ -258,7 +293,7 @@ function HistoryChart({ rows }: { rows: ChartRow[] }) {
           y1={y100}
           x2={W - PAD.right}
           y2={y100}
-          stroke="var(--ok)"
+          stroke="var(--chart-ref)"
           strokeWidth="1"
           strokeDasharray="4 2"
           opacity="0.6"
@@ -270,7 +305,7 @@ function HistoryChart({ rows }: { rows: ChartRow[] }) {
         y1={PAD.top}
         x2={PAD.left}
         y2={PAD.top + plotH}
-        stroke="var(--line)"
+        stroke="var(--chart-grid)"
         strokeWidth="1"
       />
       <line
@@ -278,7 +313,7 @@ function HistoryChart({ rows }: { rows: ChartRow[] }) {
         y1={PAD.top + plotH}
         x2={W - PAD.right}
         y2={PAD.top + plotH}
-        stroke="var(--line)"
+        stroke="var(--chart-grid)"
         strokeWidth="1"
       />
       {/* Y-axis label */}
@@ -287,7 +322,7 @@ function HistoryChart({ rows }: { rows: ChartRow[] }) {
         y={PAD.top + plotH / 2}
         textAnchor="end"
         fontSize="10"
-        fill="var(--ink-3)"
+        fill="var(--chart-axis)"
         dominantBaseline="middle"
       >
         BPS
@@ -296,7 +331,7 @@ function HistoryChart({ rows }: { rows: ChartRow[] }) {
       <polyline
         points={polyline}
         fill="none"
-        stroke="var(--sea)"
+        stroke="var(--chart-line)"
         strokeWidth="2"
         strokeLinejoin="round"
         strokeLinecap="round"
@@ -308,10 +343,11 @@ function HistoryChart({ rows }: { rows: ChartRow[] }) {
           cx={cx(r.timestamp)}
           cy={cy(r.bps)}
           r={3}
-          fill="var(--sea)"
+          fill="var(--chart-point)"
           aria-label={`${new Date(r.timestamp * 1000).toISOString().slice(0, 10)}: ${r.bps} BPS`}
         />
       ))}
-    </svg>
+      </svg>
+    </div>
   );
 }
