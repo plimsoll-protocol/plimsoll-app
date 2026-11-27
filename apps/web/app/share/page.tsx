@@ -37,6 +37,21 @@ function ShareContent() {
         setNow(nowSecs());
         if (a && typeof document !== "undefined") {
           document.title = `${a.code} coverage · Plimsoll`;
+          // Update OG title meta so share previews show the asset name
+          const ogTitle = document.querySelector('meta[property="og:title"]');
+          if (ogTitle) ogTitle.setAttribute("content", `${a.code} coverage · Plimsoll`);
+          const twTitle = document.querySelector('meta[name="twitter:title"]');
+          if (twTitle) twTitle.setAttribute("content", `${a.code} coverage · Plimsoll`);
+        }
+        // Set canonical link for this asset URL
+        if (typeof document !== "undefined") {
+          let canonical = document.querySelector<HTMLLinkElement>('link[rel="canonical"]');
+          if (!canonical) {
+            canonical = document.createElement("link");
+            canonical.rel = "canonical";
+            document.head.appendChild(canonical);
+          }
+          canonical.href = `${window.location.origin}/share/?sac=${encodeURIComponent(sac)}`;
         }
       })
       .catch(() => setAsset(null));

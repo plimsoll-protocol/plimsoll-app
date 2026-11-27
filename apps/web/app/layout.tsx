@@ -1,7 +1,5 @@
 import type { Metadata, Viewport } from "next";
 import { SiteFrame } from "@/components/SiteFrame";
-import { Footer, Header } from "@/components/SiteChrome";
-import { ThemeProvider } from "@/components/ThemeProvider";
 import { config } from "@/lib/config";
 import { buildCsp } from "@/lib/csp";
 import { MAINNET_HORIZON } from "@/lib/mainnet";
@@ -42,16 +40,6 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       </head>
       <body>
         <SiteFrame>{children}</SiteFrame>
-        <ThemeProvider>
-          <a href="#main-content" className="skip-link">
-            Skip to main content
-          </a>
-          <Header />
-          <main id="main-content" tabIndex={-1}>
-            <div className="wrap">{children}</div>
-          </main>
-          <Footer />
-        </ThemeProvider>
       </body>
     </html>
   );

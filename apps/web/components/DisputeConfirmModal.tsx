@@ -94,10 +94,10 @@ export function DisputeConfirmModal({
                 {report.reporterName ? (
                   <div>
                     <div>{report.reporterName}</div>
-                    <div className="sub">{shortAddress(report.reporter, 6)}</div>
+                    <div className="sub">{report.reporter.length > 12 ? `${report.reporter.slice(0, 6)}…${report.reporter.slice(-5)}` : report.reporter}</div>
                   </div>
                 ) : (
-                  shortAddress(report.reporter, 6)
+                  report.reporter.length > 12 ? `${report.reporter.slice(0, 6)}…${report.reporter.slice(-5)}` : report.reporter
                 )}
               </dd>
             </div>

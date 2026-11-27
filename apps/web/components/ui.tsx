@@ -263,6 +263,7 @@ const TIER_CLASS: Record<Tier, string> = {
 const TIER_TOOLTIP: Record<Tier, string> = {
   [Tier.AuditorSigned]:
     "Tier 3 — Auditor-signed: reserves independently verified by a registered auditor",
+  [Tier.AuditorSigned]: "Tier 3 — Auditor-signed: reserves independently verified by a registered auditor",
   [Tier.IssuerSigned]: "Tier 2 — Issuer-signed: reserves attested directly by the asset issuer",
   [Tier.Transcribed]:
     "Tier 1 — Transcribed: reserves copied from a public source by a registered transcriber",

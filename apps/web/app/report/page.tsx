@@ -1,5 +1,6 @@
 "use client";
 
+import dynamic from "next/dynamic";
 import { useEffect, useState } from "react";
 import {
   ContractCallError,
@@ -27,6 +28,11 @@ type Status =
   | { kind: "busy"; msg: string }
   | { kind: "ok"; hash: string; tier: Tier; sac: string }
   | { kind: "err"; msg: string };
+
+const ReportForm = dynamic(() => import("./ReportForm"), {
+  ssr: false,
+  loading: () => <FormSkeleton />,
+});
 
 export default function ReportPage() {
   const [assets, setAssets] = useState<AssetView[]>([]);
@@ -193,17 +199,6 @@ export default function ReportPage() {
     /^[0-9a-f]{64}$/.test(docHash) &&
     status.kind !== "busy";
 
-import dynamic from "next/dynamic";
-
-// The signing path pulls in @stellar/stellar-sdk and the wallet kit. Load it
-// only once the form mounts, so the page shell is in the first bundle and
-// paints immediately.
-const ReportForm = dynamic(() => import("./ReportForm"), {
-  ssr: false,
-  loading: () => <FormSkeleton />,
-});
-
-export default function ReportPage() {
   return (
     <>
       <div className="eyebrow">For issuers, auditors and transcribers</div>
@@ -551,6 +546,8 @@ export function friendly(e: unknown, fallback: string): string {
       ? e.code
       : parseContractErrorCode(fallback);
   return (code !== undefined && ERRORS[code]) || (code !== undefined && describeError(code, "ledger")) || fallback;
+}
+
 function Bar({ height, width = "100%" }: { height: number; width?: string }) {
   return <div className="skeleton" style={{ height, width }} aria-hidden="true" />;
 }

@@ -115,6 +115,15 @@
   color-scheme: dark;
 }
 
+:root:not([data-theme="light"]) {
+  --chart-surface: #142230;
+  --chart-grid: #5d7488;
+  --chart-axis: #b4c0cc;
+  --chart-line: #8cc4ef;
+  --chart-point: #8cc4ef;
+  --chart-ref: #5fd39a;
+}
+
 * {
   box-sizing: border-box;
 }
