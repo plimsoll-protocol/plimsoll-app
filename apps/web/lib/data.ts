@@ -1,7 +1,5 @@
 import {
   IndexerClient,
-  IndexerError,
-  PlimsollContracts,
   Tier,
   tierFromName,
   type IndexerAsset,
@@ -80,7 +78,23 @@ export interface AssetView {
   source: "indexer" | "chain";
 }
 
-export const contracts = trackSdkCalls(new PlimsollContracts(config.network), "contracts");
+type Contracts = InstanceType<(typeof import("@plimsoll/sdk"))["PlimsollContracts"]>;
+let contractsPromise: Promise<Contracts> | null = null;
+
+/**
+ * The contract client, imported on first use. Constructing it pulls the
+ * stellar-sdk transaction builder into the bundle, so pages that are only
+ * reading already-indexed data never pay for it.
+ */
+export function getContracts(): Promise<Contracts> {
+  contractsPromise ??= import("@plimsoll/sdk")
+    .then(({ PlimsollContracts }) => new PlimsollContracts(config.network))
+    .catch((err: unknown) => {
+      contractsPromise = null;
+      throw err;
+    });
+  return contractsPromise;
+}
 // A sleeping free-tier indexer can take a minute to wake; fall back to the
 // chain rather than leave the page loading.
 const INDEXER_TIMEOUT_MS = 8_000;
@@ -144,6 +158,7 @@ export function fromIndexer(a: IndexerAsset): AssetView {
 
 /** Read one asset straight from the contracts. */
 export async function loadFromChain(sac: string): Promise<AssetView | null> {
+  const contracts = await getContracts();
   const asset = await contracts.getAsset(sac);
   if (!asset) return null;
   const [supply, coverage, reportList] = await Promise.all([
@@ -350,10 +365,11 @@ export async function loadReporterNames(
       }
     }
     const stillMissing = missing.filter((a) => !nameCache.has(a));
+    const contracts = stillMissing.length > 0 ? await getContracts() : null;
     await Promise.all(
       stillMissing.map(async (a) => {
         try {
-          const info = await contracts.getReporter(a);
+          const info = await contracts?.getReporter(a);
           nameCache.set(a, info?.name ?? null);
         } catch (err) {
           // Leave it uncached: a failed read is not evidence of no name.

@@ -1,8 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { NOTHING_OWED_BPS, Tier, type IndexerAsset } from "@plimsoll/sdk";
 import {
-  contracts,
   fromIndexer,
+  getContracts,
   indexer,
   loadAsset,
   loadAssets,
@@ -13,6 +13,7 @@ import { ratioText, statusOf } from "../components/ui";
 // No network: every client method used is stubbed, and the console is silenced
 // for the expected fallback warnings.
 const SAC = "CSAC";
+const contracts = await getContracts();
 
 const indexed = (over: Partial<IndexerAsset> = {}): IndexerAsset => ({
   sac: SAC,

@@ -37,55 +37,65 @@ export interface ReporterGroup {
   reporters: IndexerReporter[];
 }
 
-/** Sort key used by the reputation/extended columns in the reporter table. */
+/** How the reporter tables are ordered. */
+export type SortKey = "name" | "reputation";
 export type SortDirection = "asc" | "desc";
 
-/** What the Reputation column header tells a reader it is. */
+export interface Sort {
+  key: SortKey;
+  direction: SortDirection;
+}
+
+/** Default when reputation sorting is chosen: best reputation first. */
 export const REPUTATION_TOOLTIP =
-  "Reputation score published in the reporter registry. Higher means a stronger track record; a dash means no score is available for that reporter.";
+  "On-chain reputation score from the reporter registry. Higher means the reporter's past reports have held up; a dash means the registry has not recorded a score for this address.";
 
 /**
- * A usable reputation score, or null when the indexer omitted one or sent
- * something that is not a finite number. A missing score is unknown, not zero.
+ * The registry score as a finite number, or null when the indexer sent
+ * nothing usable (a missing column, null or a non-numeric string), so the page
+ * can show a dash and keep the row out of the ranked order.
  */
 export function reputationOf(reporter: IndexerReporter): number | null {
-  const value = reporter.reputation;
-  return typeof value === "number" && Number.isFinite(value) ? value : null;
+  // Treat the field as unknown: the indexer is JSON, and a null, a string or
+  // a missing column should all read as "no score" rather than a rank.
+  const value: unknown = reporter.reputation;
+  if (value === undefined || value === null || value === "") return null;
+  const n = typeof value === "number" ? value : Number(value);
+  return Number.isFinite(n) ? n : null;
 }
 
-/** The score as shown in the table, or an em dash when it is unavailable. */
-export function reputationText(reporter: IndexerReporter): string {
-  const value = reputationOf(reporter);
-  return value === null ? "—" : String(value);
+function byName(a: IndexerReporter, b: IndexerReporter): number {
+  return (
+    a.name.toLowerCase().localeCompare(b.name.toLowerCase()) ||
+    a.address.localeCompare(b.address)
+  );
 }
 
 /**
- * Order a role's reporters by name or reputation. Reporters with no reputation
- * score are always last in either direction (unknown is not the same as low).
- * Ties fall back to name, then address, so a table does not reshuffle between
- * identical loads.
+ * Order one role's reporters. Name sorting is the registry's usual A–Z (or
+ * Z–A). Reputation sorting ranks scored reporters first, best first when
+ * descending, and always keeps unscored reporters last so a missing score never
+ * reads as a bad one. Ties fall back to name, then address.
  */
 export function sortReporters(
   list: readonly IndexerReporter[],
-  sort: "name" | "reputation",
-  direction: SortDirection,
+  sort: Sort,
 ): IndexerReporter[] {
-  const byName = (a: IndexerReporter, b: IndexerReporter) =>
-    a.name.toLowerCase().localeCompare(b.name.toLowerCase()) || a.address.localeCompare(b.address);
-  const sign = direction === "asc" ? 1 : -1;
-
-  return [...list].sort((a, b) => {
-    if (sort === "reputation") {
-      const scoreA = reputationOf(a);
-      const scoreB = reputationOf(b);
-      if (scoreA === null && scoreB === null) return byName(a, b);
-      if (scoreA === null) return 1;
-      if (scoreB === null) return -1;
-      if (scoreA !== scoreB) return (scoreA - scoreB) * sign;
-      return byName(a, b);
-    }
-    return sign * byName(a, b);
+  const out = [...list];
+  if (sort.key === "name") {
+    out.sort((a, b) => (sort.direction === "asc" ? byName(a, b) : byName(b, a)));
+    return out;
+  }
+  out.sort((a, b) => {
+    const ra = reputationOf(a);
+    const rb = reputationOf(b);
+    if (ra === null && rb === null) return byName(a, b);
+    if (ra === null) return 1;
+    if (rb === null) return -1;
+    if (ra !== rb) return sort.direction === "asc" ? ra - rb : rb - ra;
+    return byName(a, b);
   });
+  return out;
 }
 
 export function isReporterRole(value: string): value is ReporterRole {
@@ -152,7 +162,7 @@ export function compareReporters(
  */
 export function groupReporters(
   list: readonly IndexerReporter[],
-  sort: ReporterSort = DEFAULT_REPORTER_SORT,
+  sort: Sort = { key: "name", direction: "asc" },
 ): ReporterGroup[] {
   const groups: ReporterGroup[] = REPORTER_ROLES.map((role) => ({
     role,
@@ -164,9 +174,7 @@ export function groupReporters(
     if (!isReporterRole(reporter.role)) continue;
     groups.find((g) => g.role === reporter.role)?.reporters.push(reporter);
   }
-  for (const group of groups) {
-    group.reporters.sort((a, b) => compareReporters(a, b, sort));
-  }
+  for (const group of groups) group.reporters = sortReporters(group.reporters, sort);
   return groups;
 }
 

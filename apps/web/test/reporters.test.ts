@@ -11,17 +11,8 @@ import {
   filterReporters,
   groupReporters,
   isReporterRole,
-  isReporterSort,
   reputationOf,
-  reputationText,
   sortReporters,
-  defaultFilterPanelOpen,
-  filterReporters,
-  groupReporters,
-  isReporterRole,
-  matchesReporterQuery,
-  parseReporterSort,
-  readFilterPanelOpen,
   updatedAt,
   writeFilterPanelOpen,
   type FilterPanelStorage,
@@ -194,6 +185,52 @@ describe("reputation display", () => {
     expect(reputationOf(reporter({ reputation: Number.POSITIVE_INFINITY }))).toBeNull();
     expect(reputationText(reporter({ reputation: 12 }))).toBe("12");
     expect(reputationText(reporter())).toBe("—");
+  });
+});
+
+describe("reputationOf", () => {
+  it("reads a finite score and treats a missing or unusable one as null", () => {
+    expect(reputationOf(reporter({ reputation: 42 }))).toBe(42);
+    expect(reputationOf(reporter())).toBeNull();
+    expect(reputationOf(reporter({ reputation: Number.NaN }))).toBeNull();
+  });
+});
+
+describe("sortReporters", () => {
+  const list = [
+    reporter({ address: "GA", name: "Alice", reputation: 10 }),
+    reporter({ address: "GB", name: "Bob", reputation: 30 }),
+    reporter({ address: "GC", name: "Cara" }),
+    reporter({ address: "GD", name: "Dan", reputation: 20 }),
+  ];
+
+  it("sorts by reputation both ways and keeps unscored reporters last", () => {
+    expect(
+      sortReporters(list, { key: "reputation", direction: "desc" }).map((r) => r.address),
+    ).toEqual(["GB", "GD", "GA", "GC"]);
+    expect(
+      sortReporters(list, { key: "reputation", direction: "asc" }).map((r) => r.address),
+    ).toEqual(["GA", "GD", "GB", "GC"]);
+  });
+
+  it("breaks ties by name, then address", () => {
+    const tied = [
+      reporter({ address: "GZ", name: "Same", reputation: 5 }),
+      reporter({ address: "GA", name: "Same", reputation: 5 }),
+      reporter({ address: "GM", name: "Ahead", reputation: 5 }),
+    ];
+    expect(
+      sortReporters(tied, { key: "reputation", direction: "desc" }).map((r) => r.address),
+    ).toEqual(["GM", "GA", "GZ"]);
+  });
+
+  it("still sorts by name in either direction", () => {
+    expect(sortReporters(list, { key: "name", direction: "desc" }).map((r) => r.name)).toEqual([
+      "Dan",
+      "Cara",
+      "Bob",
+      "Alice",
+    ]);
   });
 });
 

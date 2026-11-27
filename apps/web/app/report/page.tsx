@@ -4,22 +4,15 @@ import dynamic from "next/dynamic";
 import { useEffect, useState } from "react";
 import {
   ContractCallError,
-  LedgerError,
-  Role,
-  Tier,
   describeError,
   formatUnits,
-  parseContractErrorCode,
-  sha256Hex,
   shortAddress,
   tierLabel,
-  validateDocUri,
+  type Tier,
 } from "@plimsoll/sdk";
 import { CopyButton } from "@/components/ui";
-import Link from "next/link";
-import { config, explorer } from "@/lib/config";
-import { contracts, loadAssets, type AssetView } from "@/lib/data";
-import { addPending, removePending, txHashOf } from "@/lib/pending-reports";
+import { explorer } from "@/lib/config";
+import { loadAssets, type AssetView } from "@/lib/data";
 import { checkAmount } from "@/lib/report-preview";
 import { WalletError, connectWallet, signXdr } from "@/lib/wallet";
 
@@ -72,19 +65,19 @@ export default function ReportPage() {
   useEffect(() => {
     if (!address || !sac) return;
     const asset = assets.find((a) => a.sac === sac);
-    if (asset?.issuer === address) {
-      setTier(Tier.IssuerSigned);
-      return;
-    }
     setTier(undefined);
-    contracts
-      .getReporter(address)
-      .then((info) => {
-        if (info?.role === Role.Auditor) setTier(Tier.AuditorSigned);
-        else if (info?.role === Role.Transcriber) setTier(Tier.Transcribed);
-        else setTier(null);
+    let cancelled = false;
+    import("@/lib/report-signing")
+      .then((signing) => signing.reporterTier(address, sac, asset?.issuer))
+      .then((next) => {
+        if (!cancelled) setTier(next);
       })
-      .catch(() => setTier(null));
+      .catch(() => {
+        if (!cancelled) setTier(null);
+      });
+    return () => {
+      cancelled = true;
+    };
   }, [address, sac, assets]);
 
   const connect = async () => {
@@ -98,14 +91,16 @@ export default function ReportPage() {
 
   const hashFile = async (file: File | undefined) => {
     if (!file) return;
-    setDocHash(await sha256Hex(await file.arrayBuffer()));
+    const { hashDocument } = await import("@/lib/report-signing");
+    setDocHash(await hashDocument(await file.arrayBuffer()));
   };
 
   const hashUrl = async () => {
     try {
       const res = await fetch(docUri);
       if (!res.ok) throw new Error(`status ${res.status}`);
-      setDocHash(await sha256Hex(await res.arrayBuffer()));
+      const { hashDocument } = await import("@/lib/report-signing");
+      setDocHash(await hashDocument(await res.arrayBuffer()));
     } catch (e) {
       setStatus({
         kind: "err",
@@ -156,7 +151,10 @@ export default function ReportPage() {
       const units = amountCheck.units;
       const asOfSecs = Math.floor(new Date(`${asOf}T00:00:00Z`).getTime() / 1000);
       setStatus({ kind: "busy", msg: "Simulating…" });
-      const xdr = await contracts.preparePostReserve({
+      // Fetched here so the contract client and its XDR codegen stay out of
+      // the initial page bundle.
+      const signing = await import("@/lib/report-signing");
+      const xdr = await signing.prepareReserveReport({
         reporter: address,
         sac,
         amount: units,
@@ -180,8 +178,8 @@ export default function ReportPage() {
         docUri,
       });
       setStatus({ kind: "busy", msg: "Submitting…" });
-      const hash = await contracts.submit(signed);
-      setStatus({ kind: "ok", hash, tier, sac });
+      const hash = await signing.submitReserveReport(signed);
+      setStatus({ kind: "ok", hash, tier });
     } catch (err) {
       if (pendingHash) removePending([pendingHash]);
       const msg = err instanceof WalletError || err instanceof Error ? err.message : String(err);

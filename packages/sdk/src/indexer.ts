@@ -119,18 +119,7 @@ export interface IndexerReporter {
   role: "auditor" | "transcriber" | "supply_poster";
   name: string;
   updated_at: string;
-  /** XLM stake in stroops (optional; absent on older indexer versions). */
-  stake?: string;
-  /** Total reports submitted (optional). */
-  reports?: number;
-  /** Number of accepted disputes against this reporter (optional). */
-  disputes?: number;
-  /** Reputation score 0–100 (optional). */
-  /**
-   * The reporter's on-chain reputation score, when the indexer has read one
-   * from the registry. Optional: an indexer that has not indexed it yet, or a
-   * registry build without it, omits the field.
-   */
+  /** Reputation score from the registry, when the indexer publishes one. */
   reputation?: number;
 }
 
