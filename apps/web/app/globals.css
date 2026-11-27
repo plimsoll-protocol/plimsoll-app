@@ -1635,4 +1635,13 @@ button.filter-toggle {
 .dispute-toast > .notice {
   pointer-events: auto;
   box-shadow: 0 4px 20px rgb(0 0 0 / 20%);
+/* reporter directory filters */
+.filter-panel {
+  display: grid;
+  gap: 14px;
+  grid-template-columns: repeat(auto-fit, minmax(min(220px, 100%), 1fr));
+  margin-top: 14px;
+}
+.filter-panel[hidden] {
+  display: none;
 }

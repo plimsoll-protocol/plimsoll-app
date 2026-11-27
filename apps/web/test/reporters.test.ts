@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 import type { IndexerReporter } from "@plimsoll/sdk";
 import {
   DEFAULT_REPORTER_SORT,
+  DEFAULT_REPORTER_FILTER,
+  FILTER_PANEL_STORAGE_KEY,
   REPORTER_ROLES,
   REPORTER_SORTS,
   ROLE_HEADINGS,
@@ -13,7 +15,16 @@ import {
   reputationOf,
   reputationText,
   sortReporters,
+  defaultFilterPanelOpen,
+  filterReporters,
+  groupReporters,
+  isReporterRole,
+  matchesReporterQuery,
+  parseReporterSort,
+  readFilterPanelOpen,
   updatedAt,
+  writeFilterPanelOpen,
+  type FilterPanelStorage,
 } from "../lib/reporters";
 
 const reporter = (over: Partial<IndexerReporter> = {}): IndexerReporter => ({
@@ -206,5 +217,115 @@ describe("updatedAt", () => {
     expect(updatedAt(undefined)).toBeNull();
     expect(updatedAt("")).toBeNull();
     expect(updatedAt("not a date")).toBeNull();
+  });
+});
+
+describe("matchesReporterQuery", () => {
+  it("searches name, address and role heading case-insensitively", () => {
+    const r = reporter({ name: "Alice Audit", address: "GABC", role: "auditor" });
+    expect(matchesReporterQuery(r, "alice")).toBe(true);
+    expect(matchesReporterQuery(r, "gabc")).toBe(true);
+    expect(matchesReporterQuery(r, "auditor")).toBe(true);
+    expect(matchesReporterQuery(r, "transcriber")).toBe(false);
+  });
+
+  it("matches everything for an empty or whitespace query", () => {
+    const r = reporter();
+    expect(matchesReporterQuery(r, "")).toBe(true);
+    expect(matchesReporterQuery(r, "   ")).toBe(true);
+  });
+});
+
+describe("filterReporters", () => {
+  const list = [
+    reporter({ address: "GB", name: "Bob", updated_at: "2026-01-01T00:00:00Z" }),
+    reporter({ address: "GA", name: "alice", updated_at: "2026-02-01T00:00:00Z" }),
+    reporter({ address: "GC", name: "Carol", updated_at: "not a date" }),
+  ];
+
+  it("sorts by name case-insensitively by default", () => {
+    expect(filterReporters(list, DEFAULT_REPORTER_FILTER).map((r) => r.name)).toEqual([
+      "alice",
+      "Bob",
+      "Carol",
+    ]);
+  });
+
+  it("sorts by most recently updated, with bad dates last", () => {
+    expect(filterReporters(list, { query: "", sort: "recent" }).map((r) => r.name)).toEqual([
+      "alice",
+      "Bob",
+      "Carol",
+    ]);
+  });
+
+  it("filters by a name fragment and leaves the input untouched", () => {
+    const input = [...list];
+    expect(filterReporters(list, { query: "bo", sort: "name" }).map((r) => r.name)).toEqual([
+      "Bob",
+    ]);
+    expect(list).toEqual(input);
+  });
+});
+
+describe("parseReporterSort", () => {
+  it("accepts the known sorts and falls back to name", () => {
+    expect(parseReporterSort("recent")).toBe("recent");
+    expect(parseReporterSort("name")).toBe("name");
+    expect(parseReporterSort("role")).toBe("name");
+    expect(parseReporterSort(null)).toBe("name");
+  });
+});
+
+describe("activeFilterCount", () => {
+  it("counts a search term and a non-default sort", () => {
+    expect(activeFilterCount(DEFAULT_REPORTER_FILTER)).toBe(0);
+    expect(activeFilterCount({ query: "  ", sort: "name" })).toBe(0);
+    expect(activeFilterCount({ query: "usdc", sort: "name" })).toBe(1);
+    expect(activeFilterCount({ query: "usdc", sort: "recent" })).toBe(2);
+  });
+});
+
+describe("filter panel state", () => {
+  const memory = (): FilterPanelStorage & { entries: Map<string, string> } => {
+    const entries = new Map<string, string>();
+    return {
+      entries,
+      getItem: (key) => entries.get(key) ?? null,
+      setItem: (key, value) => void entries.set(key, value),
+    };
+  };
+
+  it("round-trips the open state and treats a first visit as no state", () => {
+    const store = memory();
+    expect(readFilterPanelOpen(store)).toBeNull();
+    writeFilterPanelOpen(store, false);
+    expect(store.entries.get(FILTER_PANEL_STORAGE_KEY)).toBe("false");
+    expect(readFilterPanelOpen(store)).toBe(false);
+    writeFilterPanelOpen(store, true);
+    expect(readFilterPanelOpen(store)).toBe(true);
+  });
+
+  it("survives missing or corrupt storage", () => {
+    expect(readFilterPanelOpen(null)).toBeNull();
+    expect(() => writeFilterPanelOpen(undefined, true)).not.toThrow();
+    const throwing = {
+      getItem: () => {
+        throw new Error("blocked");
+      },
+      setItem: () => {
+        throw new Error("blocked");
+      },
+    };
+    expect(readFilterPanelOpen(throwing)).toBeNull();
+    expect(() => writeFilterPanelOpen(throwing, true)).not.toThrow();
+    const corrupt = memory();
+    corrupt.entries.set(FILTER_PANEL_STORAGE_KEY, "maybe");
+    expect(readFilterPanelOpen(corrupt)).toBeNull();
+  });
+
+  it("defaults open on desktop and closed on mobile", () => {
+    expect(defaultFilterPanelOpen(true)).toBe(true);
+    expect(defaultFilterPanelOpen(false)).toBe(false);
   });
 });
