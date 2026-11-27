@@ -9,6 +9,8 @@ export function toggleTheme(root: ThemeRoot, prefersDark: boolean): "dark" | "li
   const next = current === "dark" ? "light" : "dark";
   root.dataset.theme = next;
   return next;
+}
+
 export type Theme = "system" | "light" | "dark";
 export type ResolvedTheme = "light" | "dark";
 

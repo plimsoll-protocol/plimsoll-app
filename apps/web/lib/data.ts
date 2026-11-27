@@ -244,6 +244,8 @@ export async function loadIndexerStatus(
       state: "unreachable",
     };
   }
+}
+
 export interface ReporterAssets {
   assets: ReporterAsset[];
   /**

@@ -1,6 +1,7 @@
 /** Typed client for the plimsoll-indexer HTTP API. */
 
 import { DEFAULT_MAX_AGE_SECONDS, type CoverageStatus } from "./format";
+import { streamReports, type ReportStream, type StreamReportsOptions } from "./report-stream";
 
 /** Re-exported coverage status for use with {@link IndexerClient.batchCoverageStatus}. */
 export type IndexerCoverageStatus = CoverageStatus;
@@ -15,7 +16,6 @@ function indexerCoverageStatus(
   if (ages.supply > maxAgeSeconds) return "stale";
   return bps >= 10_000 ? "covered" : "under";
 }
-import { streamReports, type ReportStream, type StreamReportsOptions } from "./report-stream";
 
 /**
  * Where a figure came from. "event" means it was decoded from a contract
@@ -336,6 +336,9 @@ export class IndexerClient {
    */
   streamReports(asset: string, options?: StreamReportsOptions): ReportStream {
     return streamReports(this.base, asset, options);
+  }
+
+  /**
    * GET /v1/reporters/{address}/reports: every report the reporter posted,
    * across all assets, newest first. Walk older pages by passing `nextBefore`
    * back as `before`.
@@ -429,6 +432,9 @@ export class IndexerClient {
    */
   async testWebhook(id: string, opts?: RequestOptions): Promise<IndexerWebhookTestResult> {
     return this.post<IndexerWebhookTestResult>("/v1/webhooks/test", { id }, opts);
+  }
+
+  /**
    * Classify coverage status for many assets in one call.
    *
    * The indexer has no batch endpoint, so this fans out to `getAsset` in
@@ -488,34 +494,6 @@ export class IndexerClient {
       if (!res.ok) throw new IndexerError(res.status, `breakdown ${hash}: ${res.status}`);
       return new Uint8Array(await res.arrayBuffer());
     });
-  }
-
-  async batchCoverageStatus(
-    sacs: string[],
-    options: { maxAgeSeconds?: number } = {},
-  ): Promise<Map<string, "covered" | "under" | "stale" | "unknown">> {
-    const maxAge = options.maxAgeSeconds ?? 7 * 24 * 3600;
-    const results = await Promise.allSettled(sacs.map((sac) => this.getAsset(sac)));
-    const map = new Map<string, "covered" | "under" | "stale" | "unknown">();
-    for (let i = 0; i < sacs.length; i++) {
-      const sac = sacs[i]!;
-      const result = results[i]!;
-      if (result.status === "rejected") {
-        map.set(sac, "unknown");
-        continue;
-      }
-      const cov = result.value.coverage;
-      if (!cov || cov.bps === null) {
-        map.set(sac, "unknown");
-        continue;
-      }
-      if (cov.report_age_seconds > maxAge || cov.supply_age_seconds > maxAge) {
-        map.set(sac, "stale");
-        continue;
-      }
-      map.set(sac, cov.bps >= 10_000 ? "covered" : "under");
-    }
-    return map;
   }
 
   private post<T>(path: string, body: unknown, opts?: RequestOptions): Promise<T> {

@@ -3,20 +3,16 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useRef, useState, type FormEvent } from "react";
+import { ago } from "@plimsoll/sdk";
 import { assetFromSearch } from "@/lib/asset-query";
 import { config, explorer } from "@/lib/config";
+import { loadIndexerStatus, type IndexerStatus } from "@/lib/data";
 import { handleGlobalShortcut } from "@/lib/keyboard-shortcuts";
 import { toggleTheme } from "@/lib/theme";
+import { SearchPalette } from "./SearchPalette";
 import { ShortcutDialog } from "./ShortcutDialog";
 import { ThemeToggle } from "./ThemeToggle";
-import { usePathname } from "next/navigation";
-import { useEffect, useRef, useState } from "react";
-import { ago } from "@plimsoll/sdk";
-import { config, explorer } from "@/lib/config";
-import { loadIndexerStatus, type IndexerStatus } from "@/lib/data";
-import { SearchPalette } from "./SearchPalette";
 import { PlimsollMark } from "./ui";
-import { PlimsollMark } from "./PlimsollMark";
 
 const NAV = [
   { href: "/", label: "Assets" },

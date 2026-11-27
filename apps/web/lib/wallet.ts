@@ -93,16 +93,6 @@ async function loadKit(): Promise<{ kit: Kit; options: WalletOption[] }> {
     },
   ];
 
-  // Ledger hardware wallet: requires WebUSB or WebHID; silently skipped when
-  // the browser or OS does not expose the transport.
-  const ledgerResult = await import("@creit.tech/stellar-wallets-kit/modules/ledger").catch(
-    () => null,
-  );
-  if (ledgerResult) {
-    try {
-      const { LedgerModule } = ledgerResult as {
-        LedgerModule: new () => ModuleInterface;
-      };
   if (ledgerResult) {
     try {
       const LedgerModule = (ledgerResult as { LedgerModule: new () => ModuleInterface }).LedgerModule;
@@ -114,10 +104,6 @@ async function loadKit(): Promise<{ kit: Kit; options: WalletOption[] }> {
       });
     } catch {
       // Transport not available in this browser/OS — skip silently.
-        module: new LedgerModule() as ModuleInterface,
-      });
-    } catch {
-      // LedgerModule constructor failed — transport not supported in this environment.
     }
   }
 

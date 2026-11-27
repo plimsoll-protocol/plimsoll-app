@@ -413,6 +413,8 @@ export class PlimsollContracts extends ContractClient {
 
   async ledgerAdmin(): Promise<string> {
     return String(await this.read(this.ledger, "admin", []));
+  }
+
   /**
    * Dry-run `is_covered` through Soroban simulation without signing or
    * submitting a transaction. Returns the boolean the contract would return,

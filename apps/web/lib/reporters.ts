@@ -17,7 +17,7 @@ export const ROLE_DESCRIPTIONS: Record<ReporterRole, string> = {
   supply_poster: "Supply posters post the circulating supply of listed assets.",
 };
 
-/** How the directory orders reporters within each role. */
+/** How the directory orders reporters within each role (filter-panel sort). */
 export type ReporterSort = "name-asc" | "name-desc" | "recent";
 
 export const REPORTER_SORTS: readonly ReporterSort[] = ["name-asc", "name-desc", "recent"];
@@ -37,7 +37,7 @@ export interface ReporterGroup {
   reporters: IndexerReporter[];
 }
 
-export type ReporterSort = "name" | "reputation";
+/** Sort key used by the reputation/extended columns in the reporter table. */
 export type SortDirection = "asc" | "desc";
 
 /** What the Reputation column header tells a reader it is. */
@@ -60,15 +60,14 @@ export function reputationText(reporter: IndexerReporter): string {
 }
 
 /**
- * Order a role's reporters by the chosen column. Name order is the registry's
- * default. Reputation puts the highest score first when descending; reporters
- * with no score are always last, in either direction, because unknown is not
- * the same as low. Ties fall back to name, then address, so a table does not
- * reshuffle between identical loads.
+ * Order a role's reporters by name or reputation. Reporters with no reputation
+ * score are always last in either direction (unknown is not the same as low).
+ * Ties fall back to name, then address, so a table does not reshuffle between
+ * identical loads.
  */
 export function sortReporters(
   list: readonly IndexerReporter[],
-  sort: ReporterSort,
+  sort: "name" | "reputation",
   direction: SortDirection,
 ): IndexerReporter[] {
   const byName = (a: IndexerReporter, b: IndexerReporter) =>
@@ -167,7 +166,6 @@ export function groupReporters(
   }
   for (const group of groups) {
     group.reporters.sort((a, b) => compareReporters(a, b, sort));
-    group.reporters = sortReporters(group.reporters, "name", "asc");
   }
   return groups;
 }

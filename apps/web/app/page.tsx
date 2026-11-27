@@ -1,19 +1,11 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useRef, useState } from "react";
-import { useEffect, useRef, useState } from "react";
+import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { AssetCard } from "@/components/AssetCard";
 import { CoverageLegend, Skeleton, nowSecs } from "@/components/ui";
-import { useRouter, useSearchParams } from "next/navigation";
-import { Suspense, useEffect, useState } from "react";
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { Suspense } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
-import { useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
-import { AssetCard } from "@/components/AssetCard";
-import { Skeleton, nowSecs } from "@/components/ui";
+import { RefreshControls } from "@/components/RefreshControls";
 import {
   MAX_COMPARE,
   COMPARE_PARAM,
@@ -22,9 +14,10 @@ import {
   toggleSelection,
 } from "@/lib/compare";
 import { config } from "@/lib/config";
-import { loadAssets, type AssetView } from "@/lib/data";
+import { loadAssets, loadAsset, type AssetView } from "@/lib/data";
 import { useAutoRefresh, useRefreshIntervalSetting } from "@/lib/refresh-interval";
-import { RefreshControls } from "@/components/RefreshControls";
+import { clearLastAsset, getLastAsset, attemptRestore } from "@/lib/session";
+import { Tier, tierLabel } from "@plimsoll/sdk";
 
 function matchesQuery(a: AssetView, q: string): boolean {
   const lq = q.toLowerCase();
@@ -44,27 +37,6 @@ export function ChainFallbackNotice({ networkName }: { networkName?: string }) {
     </div>
   );
 }
-import { loadAssets, loadAsset, type AssetView } from "@/lib/data";
-import { clearLastAsset, getLastAsset, attemptRestore } from "@/lib/session";
-
-// Restoration runs once per page lifetime: a reload resets this flag, but
-// client-side navigation back to the homepage does not, so the user is not
-// redirected away from a homepage they explicitly opened.
-let restorationAttempted = false;
-
-export default function Home() {
-  return (
-    <Suspense fallback={<Skeleton height={40} width="40%" />}>
-      <Dashboard />
-    </Suspense>
-  );
-}
-
-function Dashboard() {
-  const router = useRouter();
-  const params = useSearchParams();
-  const selected = parseSelection(new URLSearchParams(params.toString()));
-import { Tier, tierLabel } from "@plimsoll/sdk";
 
 const TIER_FILTERS: { value: string | null; label: string }[] = [
   { value: null, label: "All" },
@@ -106,11 +78,7 @@ function TierFilter({
         </button>
       ))}
       {active && (
-        <button
-          type="button"
-          onClick={() => setTier(null)}
-          className="button secondary"
-        >
+        <button type="button" onClick={() => setTier(null)} className="button secondary">
           Clear filter
         </button>
       )}
@@ -118,7 +86,35 @@ function TierFilter({
   );
 }
 
-function HomeContent() {
+// Restoration runs once per page lifetime: a reload resets this flag, but
+// client-side navigation back to the homepage does not, so the user is not
+// redirected away from a homepage they explicitly opened.
+let restorationAttempted = false;
+
+export default function Home() {
+  return (
+    <Suspense fallback={<Skeleton height={40} width="40%" />}>
+      <Dashboard />
+    </Suspense>
+  );
+}
+
+function Dashboard() {
+  const router = useRouter();
+  const params = useSearchParams();
+  const selected = parseSelection(new URLSearchParams(params.toString()));
+  const tier = params.get("tier");
+
+  const setTier = useCallback(
+    (next: string | null) => {
+      const p = new URLSearchParams(params.toString());
+      if (next) p.set("tier", next);
+      else p.delete("tier");
+      router.replace(`?${p.toString()}`, { scroll: false });
+    },
+    [params, router],
+  );
+
   const [assets, setAssets] = useState<AssetView[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [now, setNow] = useState(nowSecs());
@@ -130,22 +126,6 @@ function HomeContent() {
 
   const fetch = useCallback(() => {
     if (cancelRef.current) cancelRef.current();
-  const searchParams = useSearchParams();
-  const router = useRouter();
-  const tier = searchParams.get("tier");
-
-  const setTier = useCallback(
-    (next: string | null) => {
-      const params = new URLSearchParams(searchParams.toString());
-      if (next) params.set("tier", next);
-      else params.delete("tier");
-      router.replace(`?${params.toString()}`, { scroll: false });
-    },
-    [searchParams, router],
-  );
-  const router = useRouter();
-
-  useEffect(() => {
     let cancelled = false;
     cancelRef.current = () => {
       cancelled = true;
@@ -161,64 +141,54 @@ function HomeContent() {
       .catch((err: unknown) => {
         if (!cancelled) setError(err instanceof Error ? err.message : String(err));
       });
-import { useCallback, useState } from "react";
-import { AssetCard } from "@/components/AssetCard";
-import { Skeleton } from "@/components/ui";
-import { config } from "@/lib/config";
-import { loadAssets, type AssetView } from "@/lib/data";
-import { useAutoRefresh } from "@/lib/refresh";
-
-export default function Home() {
-  const [assets, setAssets] = useState<AssetView[] | null>(null);
-  const load = useCallback(async () => {
-    const list = await loadAssets();
-    setAssets(list);
   }, []);
-  const { now, refreshing, error, refresh } = useAutoRefresh(load);
 
   const { refresh } = useAutoRefresh(fetch, intervalValue);
+
   const handleSearch = (value: string) => {
     setQuery(value);
     if (timerRef.current) clearTimeout(timerRef.current);
     timerRef.current = setTimeout(() => setDebouncedQuery(value), 200);
   };
 
-  const filtered = useMemo(() => {
+  useEffect(() => {
+    if (restorationAttempted) return;
+    restorationAttempted = true;
+
+    void attemptRestore({
+      getStored: getLastAsset,
+      clearStored: clearLastAsset,
+      loadAsset,
+      navigate: (sac) => router.push(`/asset/?sac=${sac}`),
+    });
+  }, [router]);
+
+  useEffect(() => {
+    if (restorationAttempted) return;
+    restorationAttempted = true;
+
+    void attemptRestore({
+      getStored: getLastAsset,
+      clearStored: clearLastAsset,
+      loadAsset,
+      navigate: (sac) => router.push(`/asset/?sac=${sac}`),
+    });
+  }, [router]);
+  const tierFiltered = useMemo(() => {
     if (!assets) return null;
     if (!tier) return assets;
     const t = Number(tier);
     return assets.filter((a) => a.coverage?.tier === t);
   }, [assets, tier]);
 
-  useEffect(() => {
-    if (restorationAttempted) return;
-    restorationAttempted = true;
-
-    void attemptRestore({
-      getStored: getLastAsset,
-      clearStored: clearLastAsset,
-      loadAsset,
-      navigate: (sac) => router.push(`/asset/?sac=${sac}`),
-    });
-  }, [router]);
-
-  useEffect(() => {
-    if (restorationAttempted) return;
-    restorationAttempted = true;
-
-    void attemptRestore({
-      getStored: getLastAsset,
-      clearStored: clearLastAsset,
-      loadAsset,
-      navigate: (sac) => router.push(`/asset/?sac=${sac}`),
-    });
-  }, [router]);
+  const filtered = useMemo(() => {
+    if (!tierFiltered) return null;
+    const q = debouncedQuery.trim();
+    if (!q) return tierFiltered;
+    return tierFiltered.filter((a) => matchesQuery(a, q));
+  }, [tierFiltered, debouncedQuery]);
 
   const source = assets?.[0]?.source;
-  const filtered =
-    assets && debouncedQuery.trim()
-      ? assets.filter((a) => matchesQuery(a, debouncedQuery.trim()))
-      : assets;
   const full = selected.length >= MAX_COMPARE;
 
   const applySelection = (next: string[]) => {
@@ -247,7 +217,6 @@ export default function Home() {
       <div className="spread mt">
         <h2 style={{ margin: 0 }}>Listed assets</h2>
         <div className="row" style={{ gap: 12, alignItems: "center" }}>
-        <div className="row">
           <span className="sub">
             {source === "indexer"
               ? "Read from the Plimsoll indexer"
@@ -260,16 +229,6 @@ export default function Home() {
             onChange={setIntervalValue}
             onRefresh={refresh}
           />
-          <button
-            type="button"
-            className="secondary"
-            onClick={refresh}
-            disabled={refreshing}
-            aria-label="Refresh listed assets"
-            style={{ padding: "3px 10px", fontSize: "0.82rem" }}
-          >
-            {refreshing ? "Refreshing…" : "Refresh"}
-          </button>
         </div>
       </div>
 
@@ -289,7 +248,9 @@ export default function Home() {
           />
         </div>
       ) : null}
+
       {source === "chain" ? <ChainFallbackNotice /> : null}
+
       <section className="card compare-bar mt" aria-label="Compare assets">
         <div>
           <strong aria-live="polite">
@@ -322,6 +283,7 @@ export default function Home() {
           Select at least one asset with the Compare checkboxes on the cards below.
         </span>
       </section>
+
       <TierFilter tier={tier} setTier={setTier} />
 
       {error ? (
@@ -340,8 +302,7 @@ export default function Home() {
                 <Skeleton height={14} width="70%" />
               </div>
             ))
-          : filtered?.map((a) => <AssetCard key={a.sac} asset={a} now={now} />)}
-          : assets?.map((a) => (
+          : filtered?.map((a) => (
               <AssetCard
                 key={a.sac}
                 asset={a}
@@ -361,21 +322,11 @@ export default function Home() {
         </p>
       ) : null}
 
-      {assets && assets.length === 0 && !debouncedQuery.trim() ? (
-        <p className="notice notice-info mt">
-          No assets listed yet. <Link href="/list/">List the first one</Link>.
-        </p>
-      </div>
-
-      {assets && filtered!.length === 0 ? (
+      {assets && filtered!.length === 0 && !debouncedQuery.trim() ? (
         tier ? (
           <p className="notice notice-info mt">
             No assets match this filter.{" "}
-            <button
-              type="button"
-              onClick={() => setTier(null)}
-              className="button secondary"
-            >
+            <button type="button" onClick={() => setTier(null)} className="button secondary">
               Clear filter
             </button>
           </p>
@@ -411,13 +362,5 @@ export default function Home() {
         </li>
       </ol>
     </>
-  );
-}
-
-export default function Home() {
-  return (
-    <Suspense fallback={<Skeleton height={40} width="40%" />}>
-      <HomeContent />
-    </Suspense>
   );
 }
