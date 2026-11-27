@@ -11,7 +11,7 @@ import {
   sacAddress,
 } from "@plimsoll/sdk";
 import { config, explorer } from "@/lib/config";
-import { contracts, loadAssets } from "@/lib/data";
+import { getContracts, loadAssets } from "@/lib/data";
 import { unissuedWarning } from "@/lib/watch";
 import { connectWallet, signXdr } from "@/lib/wallet";
 
@@ -71,12 +71,13 @@ export default function ListPage() {
     setStep({ kind: "busy", msg: "Waiting for your signature…" });
     const signed = await signXdr(xdr, source);
     setStep({ kind: "busy", msg: "Submitting…" });
-    return contracts.submit(signed);
+    return (await getContracts()).submit(signed);
   };
 
   const list = async () => {
     try {
       setStep({ kind: "busy", msg: "Checking the coverage ledger…" });
+      const contracts = await getContracts();
       const existing = await contracts.getAsset(sac);
       if (existing) {
         setStep({ kind: "listed", sac, already: true });
@@ -103,6 +104,7 @@ export default function ListPage() {
 
   const deploySac = async () => {
     try {
+      const contracts = await getContracts();
       await signAndSend(
         (src) => contracts.prepareDeploySac(src, code, issuer),
         "asset contract deployment",

@@ -34,7 +34,7 @@ import { assetFromSearch } from "@/lib/asset-query";
 import { config, explorer } from "@/lib/config";
 import { embedCode } from "@/lib/badge";
 import {
-  contracts,
+  getContracts,
   indexer,
   loadAsset,
   loadReporterNames,
@@ -450,6 +450,7 @@ function LiveCheck({ sac }: { sac: string }) {
     const p = parsed.value;
     setState({ kind: "busy" });
     try {
+      const contracts = await getContracts();
       const [cov, ok] = await Promise.all([
         contracts.coverage(sac, p.tier),
         contracts.isCovered(sac, p.bps, p.days * 86_400, p.tier),
