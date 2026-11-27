@@ -1,10 +1,14 @@
+export * from "./cache";
 export * from "./types";
 export * from "./format";
 export * from "./contract";
 export * from "./errors";
 export * from "./events";
+export * from "./report-stream";
 export * from "./vault";
 export * from "./indexer";
 export * from "./verify";
+export * from "./doc-uri";
 export { TESTNET } from "./networks";
 export * from "./horizon";
+export * from "./cache";

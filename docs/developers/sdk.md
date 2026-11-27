@@ -28,6 +28,7 @@ formatUnits(cov!.reserves);    // "1,020,000"
 | --- | --- |
 | `getAsset(sac)` | `AssetRecord \| null` |
 | `getSupply(sac)` | `SupplySnapshot \| null` |
+| `getAssetMetadata(sac)` | `AssetMeta` (`code`, `issuer`, `displayName`); reads `asset_metadata` and falls back to the SAC's own `name()` on a ledger without it |
 | `getReport(sac, tier)` | `ReserveReport \| null` |
 | `getReports(sac)` | `ReserveReport[]`, every tier's latest report in one call |
 | `coverage(sac, minTier)` | `Coverage \| null` |
@@ -40,6 +41,7 @@ formatUnits(cov!.reserves);    // "1,020,000"
 | `preparePostReserve({ reporter, sac, amount, asOf, docHash, docUri })` | unsigned XDR |
 | `prepareSetReporter(admin, reporter, role, name)` | unsigned XDR; `name` must be 1–64 UTF-8 bytes |
 | `prepareRevoke(admin, reporter)` | unsigned XDR |
+| `estimateFee(operation)` | resource fee in stroops via simulation, or `0` on error |
 | `submit(signedXdr)` | transaction hash, after it succeeds |
 
 A failed simulation throws `ContractCallError`. For contract errors its `code`
@@ -116,6 +118,7 @@ const revokeXdr = await plimsoll.prepareRevoke(admin, reporter);
 | `supplyHistory(sac, limit?)` | `GET /v1/assets/{sac}/supply` |
 | `reportHistory(sac, limit?)` | `GET /v1/assets/{sac}/reports` |
 | `reporters()` | `GET /v1/reporters` |
+| `reporterReports(address, { limit?, before?, asset? })` | `GET /v1/reporters/{address}/reports`, paged with `nextBefore` |
 | `network()` | `GET /v1/network` |
 | `breakdown(hash)` | `GET /v1/breakdowns/{hash}` (raw bytes) |
 

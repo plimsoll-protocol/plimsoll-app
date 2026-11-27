@@ -10,6 +10,7 @@ export enum Role {
   Auditor = 1,
   Transcriber = 2,
   SupplyPoster = 3,
+  Watcher = 4,
 }
 
 export interface NetworkConfig {
@@ -25,6 +26,22 @@ export interface AssetRecord {
   code: string;
   issuer: string;
   listedAt: number;
+}
+
+/**
+ * How an asset is named for display. Returned by
+ * {@link PlimsollContracts.getAssetMetadata}.
+ */
+export interface AssetMeta {
+  /** Asset code, e.g. `"USDC"`. `"XLM"` for the native asset. */
+  code: string;
+  /** Issuer account (G…). Empty string for the native asset, which has no issuer. */
+  issuer: string;
+  /**
+   * Human-readable name. The coverage ledger's `asset_metadata` value when the
+   * contract provides one; otherwise the asset code.
+   */
+  displayName: string;
 }
 
 export interface SupplySnapshot {
@@ -61,6 +78,23 @@ export interface ReporterInfo {
   role: Role;
   name: string;
   addedAt: number;
+}
+
+/**
+ * A single entry in a vault's withdrawal queue.
+ *
+ * @remarks
+ * Returned by {@link CoveredVaultClient.getPendingWithdrawals}. The queue is
+ * ordered oldest-first by the vault contract; entries are removed when the
+ * withdrawal is processed or cancelled.
+ */
+export interface WithdrawalRequest {
+  /** Stellar address of the account that queued the withdrawal. */
+  to: string;
+  /** Amount requested, in smallest units (7 decimal places for classic assets). */
+  amount: bigint;
+  /** Ledger sequence number at which the request was submitted. */
+  submittedAt: number;
 }
 
 /** bps value the contract returns when supply is zero. */

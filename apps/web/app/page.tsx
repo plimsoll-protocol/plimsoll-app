@@ -1,11 +1,49 @@
 "use client";
 
 import Link from "next/link";
+import { useCallback, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { AssetCard } from "@/components/AssetCard";
+import { CoverageLegend, Skeleton, nowSecs } from "@/components/ui";
+import { useRouter, useSearchParams } from "next/navigation";
+import { Suspense, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { Suspense } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { AssetCard } from "@/components/AssetCard";
 import { Skeleton, nowSecs } from "@/components/ui";
+import {
+  MAX_COMPARE,
+  COMPARE_PARAM,
+  comparisonHref,
+  parseSelection,
+  toggleSelection,
+} from "@/lib/compare";
 import { config } from "@/lib/config";
+import { loadAssets, type AssetView } from "@/lib/data";
+import { useAutoRefresh, useRefreshIntervalSetting } from "@/lib/refresh-interval";
+import { RefreshControls } from "@/components/RefreshControls";
+
+function matchesQuery(a: AssetView, q: string): boolean {
+  const lq = q.toLowerCase();
+  if (a.code.toLowerCase().includes(lq)) return true;
+  if (a.issuer.toLowerCase().includes(lq)) return true;
+  if (a.toml?.org_name?.toLowerCase().includes(lq)) return true;
+  if (a.toml?.home_domain?.toLowerCase().includes(lq)) return true;
+  return false;
+}
+
+export function ChainFallbackNotice({ networkName }: { networkName?: string }) {
+  const net = networkName ?? config.networkName;
+  return (
+    <div className="notice notice-warn mt" role="status" data-testid="chain-fallback-notice">
+      Reading directly from on-chain storage on {net}. This fallback list may not include every
+      listed asset (may be incomplete).
+    </div>
+  );
+}
 import { loadAssets, loadAsset, type AssetView } from "@/lib/data";
 import { clearLastAsset, getLastAsset, attemptRestore } from "@/lib/session";
 
@@ -15,27 +53,154 @@ import { clearLastAsset, getLastAsset, attemptRestore } from "@/lib/session";
 let restorationAttempted = false;
 
 export default function Home() {
+  return (
+    <Suspense fallback={<Skeleton height={40} width="40%" />}>
+      <Dashboard />
+    </Suspense>
+  );
+}
+
+function Dashboard() {
+  const router = useRouter();
+  const params = useSearchParams();
+  const selected = parseSelection(new URLSearchParams(params.toString()));
+import { Tier, tierLabel } from "@plimsoll/sdk";
+
+const TIER_FILTERS: { value: string | null; label: string }[] = [
+  { value: null, label: "All" },
+  {
+    value: String(Tier.Transcribed),
+    label: `Tier 1 · ${tierLabel(Tier.Transcribed)}`,
+  },
+  {
+    value: String(Tier.IssuerSigned),
+    label: `Tier 2 · ${tierLabel(Tier.IssuerSigned)}`,
+  },
+  {
+    value: String(Tier.AuditorSigned),
+    label: `Tier 3 · ${tierLabel(Tier.AuditorSigned)}`,
+  },
+];
+
+function TierFilter({
+  tier,
+  setTier,
+}: {
+  tier: string | null;
+  setTier: (next: string | null) => void;
+}) {
+  const active = tier !== null;
+  return (
+    <div className="row mt" role="group" aria-label="Filter assets by coverage tier">
+      <span className="sub">Filter by tier:</span>
+      {TIER_FILTERS.map((f) => (
+        <button
+          key={f.label}
+          type="button"
+          onClick={() => setTier(f.value)}
+          aria-pressed={tier === f.value ? true : undefined}
+          aria-current={tier === f.value ? "true" : undefined}
+          className={`pill ${tier === f.value ? "pill-covered" : ""}`}
+        >
+          {f.label}
+        </button>
+      ))}
+      {active && (
+        <button
+          type="button"
+          onClick={() => setTier(null)}
+          className="button secondary"
+        >
+          Clear filter
+        </button>
+      )}
+    </div>
+  );
+}
+
+function HomeContent() {
   const [assets, setAssets] = useState<AssetView[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [now, setNow] = useState(nowSecs());
+  const [intervalValue, setIntervalValue] = useRefreshIntervalSetting();
+  const cancelRef = useRef<(() => void) | null>(null);
+  const [query, setQuery] = useState("");
+  const [debouncedQuery, setDebouncedQuery] = useState("");
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const fetch = useCallback(() => {
+    if (cancelRef.current) cancelRef.current();
+  const searchParams = useSearchParams();
+  const router = useRouter();
+  const tier = searchParams.get("tier");
+
+  const setTier = useCallback(
+    (next: string | null) => {
+      const params = new URLSearchParams(searchParams.toString());
+      if (next) params.set("tier", next);
+      else params.delete("tier");
+      router.replace(`?${params.toString()}`, { scroll: false });
+    },
+    [searchParams, router],
+  );
   const router = useRouter();
 
   useEffect(() => {
     let cancelled = false;
+    cancelRef.current = () => {
+      cancelled = true;
+    };
     loadAssets()
       .then((list) => {
         if (!cancelled) {
           setAssets(list);
           setNow(nowSecs());
+          setError(null);
         }
       })
       .catch((err: unknown) => {
         if (!cancelled) setError(err instanceof Error ? err.message : String(err));
       });
-    return () => {
-      cancelled = true;
-    };
+import { useCallback, useState } from "react";
+import { AssetCard } from "@/components/AssetCard";
+import { Skeleton } from "@/components/ui";
+import { config } from "@/lib/config";
+import { loadAssets, type AssetView } from "@/lib/data";
+import { useAutoRefresh } from "@/lib/refresh";
+
+export default function Home() {
+  const [assets, setAssets] = useState<AssetView[] | null>(null);
+  const load = useCallback(async () => {
+    const list = await loadAssets();
+    setAssets(list);
   }, []);
+  const { now, refreshing, error, refresh } = useAutoRefresh(load);
+
+  const { refresh } = useAutoRefresh(fetch, intervalValue);
+  const handleSearch = (value: string) => {
+    setQuery(value);
+    if (timerRef.current) clearTimeout(timerRef.current);
+    timerRef.current = setTimeout(() => setDebouncedQuery(value), 200);
+  };
+
+  const filtered = useMemo(() => {
+    if (!assets) return null;
+    if (!tier) return assets;
+    const t = Number(tier);
+    return assets.filter((a) => a.coverage?.tier === t);
+  }, [assets, tier]);
+
+  useEffect(() => {
+    if (restorationAttempted) return;
+    restorationAttempted = true;
+
+    void attemptRestore({
+      getStored: getLastAsset,
+      clearStored: clearLastAsset,
+      loadAsset,
+      navigate: (sac) => router.push(`/asset/?sac=${sac}`),
+    });
+  }, [router]);
 
   useEffect(() => {
     if (restorationAttempted) return;
@@ -50,6 +215,20 @@ export default function Home() {
   }, [router]);
 
   const source = assets?.[0]?.source;
+  const filtered =
+    assets && debouncedQuery.trim()
+      ? assets.filter((a) => matchesQuery(a, debouncedQuery.trim()))
+      : assets;
+  const full = selected.length >= MAX_COMPARE;
+
+  const applySelection = (next: string[]) => {
+    const url = new URL(window.location.href);
+    if (next.length === 0) url.searchParams.delete(COMPARE_PARAM);
+    else url.searchParams.set(COMPARE_PARAM, next.join(","));
+    router.replace(url.pathname + url.search, { scroll: false });
+  };
+
+  const toggle = (sac: string) => applySelection(toggleSelection(selected, sac));
 
   return (
     <>
@@ -63,16 +242,87 @@ export default function Home() {
         </p>
       </section>
 
+      <CoverageLegend />
+
       <div className="spread mt">
         <h2 style={{ margin: 0 }}>Listed assets</h2>
-        <span className="sub">
-          {source === "indexer"
-            ? "Read from the Plimsoll indexer"
-            : source === "chain"
-              ? `Read directly from the coverage ledger on ${config.networkName}`
-              : null}
-        </span>
+        <div className="row" style={{ gap: 12, alignItems: "center" }}>
+        <div className="row">
+          <span className="sub">
+            {source === "indexer"
+              ? "Read from the Plimsoll indexer"
+              : source === "chain"
+                ? `Read directly from the coverage ledger on ${config.networkName}`
+                : null}
+          </span>
+          <RefreshControls
+            interval={intervalValue}
+            onChange={setIntervalValue}
+            onRefresh={refresh}
+          />
+          <button
+            type="button"
+            className="secondary"
+            onClick={refresh}
+            disabled={refreshing}
+            aria-label="Refresh listed assets"
+            style={{ padding: "3px 10px", fontSize: "0.82rem" }}
+          >
+            {refreshing ? "Refreshing…" : "Refresh"}
+          </button>
+        </div>
       </div>
+
+      {assets !== null ? (
+        <div className="mt" style={{ maxWidth: 480 }}>
+          <label htmlFor="asset-search" className="sr-only">
+            Search assets
+          </label>
+          <input
+            id="asset-search"
+            type="search"
+            className="search-input"
+            placeholder="Search by code, issuer or organisation…"
+            value={query}
+            onChange={(e) => handleSearch(e.target.value)}
+            aria-label="Search assets by code, issuer or organisation"
+          />
+        </div>
+      ) : null}
+      {source === "chain" ? <ChainFallbackNotice /> : null}
+      <section className="card compare-bar mt" aria-label="Compare assets">
+        <div>
+          <strong aria-live="polite">
+            {selected.length} of {MAX_COMPARE} selected
+          </strong>
+          <div className="sub">
+            Pick up to five assets to plot their coverage histories on one chart.
+          </div>
+        </div>
+        <div className="row">
+          {selected.length > 0 ? (
+            <Link className="button" href={comparisonHref(selected)}>
+              Compare selected
+            </Link>
+          ) : (
+            <button type="button" disabled aria-describedby="compare-bar-hint">
+              Compare selected
+            </button>
+          )}
+          <button
+            type="button"
+            className="secondary"
+            onClick={() => applySelection([])}
+            disabled={selected.length === 0}
+          >
+            Clear all
+          </button>
+        </div>
+        <span id="compare-bar-hint" className="sr-only">
+          Select at least one asset with the Compare checkboxes on the cards below.
+        </span>
+      </section>
+      <TierFilter tier={tier} setTier={setTier} />
 
       {error ? (
         <p className="notice notice-bad mt" role="alert">
@@ -90,13 +340,50 @@ export default function Home() {
                 <Skeleton height={14} width="70%" />
               </div>
             ))
-          : assets?.map((a) => <AssetCard key={a.sac} asset={a} now={now} />)}
+          : filtered?.map((a) => <AssetCard key={a.sac} asset={a} now={now} />)}
+          : assets?.map((a) => (
+              <AssetCard
+                key={a.sac}
+                asset={a}
+                now={now}
+                selection={{
+                  checked: selected.includes(a.sac),
+                  disabled: full && !selected.includes(a.sac),
+                  onToggle: () => toggle(a.sac),
+                }}
+              />
+            ))}
       </div>
 
-      {assets && assets.length === 0 ? (
+      {filtered && filtered.length === 0 && debouncedQuery.trim() ? (
+        <p className="notice notice-info mt">
+          No assets match &ldquo;{debouncedQuery}&rdquo;.
+        </p>
+      ) : null}
+
+      {assets && assets.length === 0 && !debouncedQuery.trim() ? (
         <p className="notice notice-info mt">
           No assets listed yet. <Link href="/list/">List the first one</Link>.
         </p>
+      </div>
+
+      {assets && filtered!.length === 0 ? (
+        tier ? (
+          <p className="notice notice-info mt">
+            No assets match this filter.{" "}
+            <button
+              type="button"
+              onClick={() => setTier(null)}
+              className="button secondary"
+            >
+              Clear filter
+            </button>
+          </p>
+        ) : (
+          <p className="notice notice-info mt">
+            No assets listed yet. <Link href="/list/">List the first one</Link>.
+          </p>
+        )
       ) : null}
 
       <h2>How a reading is made</h2>
@@ -124,5 +411,13 @@ export default function Home() {
         </li>
       </ol>
     </>
+  );
+}
+
+export default function Home() {
+  return (
+    <Suspense fallback={<Skeleton height={40} width="40%" />}>
+      <HomeContent />
+    </Suspense>
   );
 }

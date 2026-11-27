@@ -8,7 +8,7 @@ whether it is backed, according to whom, and how recently.
 1. Open the [app](https://plimsoll-app-gths-amber.vercel.app/) and find the asset.
 2. Read the three things on its card:
    * **The ratio.** 100% or more means reported reserves cover everything in circulation.
-   * **The status.** *Fully backed*, *Under-backed*, *Report stale* (older than 31 days) or *No data*.
+   * **The status.** *Fully backed*, *Under-backed*, *Report stale* (a report or supply snapshot older than the SDK's seven-day default) or *No data*.
    * **The tier.** *Auditor-signed* is strongest. *Issuer-signed* means the issuer vouched for itself. *Transcribed* means a volunteer copied a published figure.
 3. Open the asset page to see every report, its date, its signer and its document.
 

@@ -6,6 +6,7 @@ import {
   Contract,
   Keypair,
   Operation,
+  StrKey,
   TransactionBuilder,
   nativeToScVal,
   rpc,
@@ -14,7 +15,9 @@ import {
 } from "@stellar/stellar-sdk";
 import { Buffer } from "buffer";
 import { RegistryError, describeError, parseContractErrorCode } from "./errors";
+import { TESTNET } from "./networks";
 import type {
+  AssetMeta,
   AssetRecord,
   Coverage,
   NetworkConfig,
@@ -143,6 +146,40 @@ export function decodeCoverage(raw: Raw): Coverage {
   };
 }
 
+/**
+ * Decodes the coverage ledger's `asset_metadata` struct. A blank
+ * `display_name` falls back to the code, so the result always has a name.
+ */
+export function decodeAssetMeta(raw: Raw): AssetMeta {
+  const code = String(raw.code);
+  const displayName = raw.display_name == null ? "" : String(raw.display_name).trim();
+  return { code, issuer: String(raw.issuer), displayName: displayName || code };
+}
+
+/**
+ * Parses what a Stellar Asset Contract's `name()` returns: `"CODE:ISSUER"`
+ * for a classic asset, `"native"` for XLM. Throws on anything else.
+ */
+export function parseSacName(name: string): Pick<AssetMeta, "code" | "issuer"> {
+  if (name === "native") return { code: "XLM", issuer: "" };
+  const m = /^([a-zA-Z0-9]{1,12}):(G[A-Z2-7]{55})$/.exec(name);
+  if (!m || !m[1] || !m[2] || !StrKey.isValidEd25519PublicKey(m[2])) {
+    throw new Error(`Not a Stellar Asset Contract name: ${JSON.stringify(name)}`);
+  }
+  return { code: m[1], issuer: m[2] };
+}
+
+/**
+ * True when a simulation failed because the contract has no function by that
+ * name, as opposed to the function running and returning an error. This is
+ * how the SDK tells a contract that predates a view function from one that
+ * rejected the call.
+ */
+export function isMissingFunctionError(err: unknown): boolean {
+  if (!(err instanceof ContractCallError) || err.code !== undefined) return false;
+  return /non-existent contract function|Error\(WasmVm, MissingValue\)/.test(err.detail);
+}
+
 export function decodeReporter(raw: Raw): ReporterInfo {
   return { role: num(raw.role) as Role, name: String(raw.name), addedAt: num(raw.added_at) };
 }
@@ -166,12 +203,17 @@ export interface ReservePostArgs {
 
 /** Shared RPC plumbing: simulated reads and prepared (unsigned) transactions. */
 export abstract class ContractClient {
-  readonly server: rpc.Server;
+  private _server: rpc.Server | undefined;
 
   constructor(protected readonly network: NetworkConfig) {
-    this.server = new rpc.Server(network.rpcUrl, {
-      allowHttp: network.rpcUrl.startsWith("http://"),
+    this._server = undefined;
+  }
+
+  get server(): rpc.Server {
+    this._server ??= new rpc.Server(this.network.rpcUrl, {
+      allowHttp: this.network.rpcUrl.startsWith("http://"),
     });
+    return this._server;
   }
 
   protected async read(contract: Contract, method: string, args: xdr.ScVal[]): Promise<unknown> {
@@ -209,6 +251,57 @@ export abstract class ContractClient {
     } catch (err) {
       throw new ContractCallError("prepare", err instanceof Error ? err.message : String(err));
     }
+  }
+
+  /**
+   * Estimates the resource fee in stroops for an operation using simulation.
+   *
+   * @param operation The operation to simulate.
+   * @returns The resource fee in stroops, or 0 on simulation error.
+   */
+  async estimateFee(operation: xdr.Operation): Promise<number> {
+    return estimateFee(operation, this.server, this.network.networkPassphrase);
+  }
+}
+
+/**
+ * Estimates the resource fee in stroops for an operation using simulation.
+ *
+ * Calls `simulateTransaction` on the given server (or TESTNET by default)
+ * and returns the resource fee (`minResourceFee`) in stroops.
+ * Returns 0 on simulation error or RPC exception (never throws).
+ *
+ * @param operation The operation to simulate.
+ * @param server Optional RPC server instance to simulate on (defaults to TESTNET RPC).
+ * @param networkPassphrase Optional network passphrase (defaults to TESTNET passphrase).
+ * @returns The resource fee in stroops, or 0 on simulation error.
+ */
+export async function estimateFee(
+  operation: xdr.Operation,
+  server?: rpc.Server,
+  networkPassphrase?: string,
+): Promise<number> {
+  try {
+    const s =
+      server ??
+      new rpc.Server(TESTNET.rpcUrl, {
+        allowHttp: TESTNET.rpcUrl.startsWith("http://"),
+      });
+    const passphrase = networkPassphrase ?? TESTNET.networkPassphrase;
+    const tx = new TransactionBuilder(new Account(READ_SOURCE, "0"), {
+      fee: BASE_FEE,
+      networkPassphrase: passphrase,
+    })
+      .addOperation(operation)
+      .setTimeout(30)
+      .build();
+    const sim = await s.simulateTransaction(tx);
+    if (rpc.Api.isSimulationError(sim)) {
+      return 0;
+    }
+    return Number(sim.minResourceFee ?? 0);
+  } catch {
+    return 0;
   }
 }
 
@@ -265,6 +358,51 @@ export class PlimsollContracts extends ContractClient {
     return v === true;
   }
 
+  /**
+   * Code, issuer and display name of an asset, for labelling it in a UI.
+   *
+   * Asks the coverage ledger's `asset_metadata(sac)` view first. A ledger
+   * deployed before that function existed has no such entry point; then the
+   * name is read from the Stellar Asset Contract itself, whose `name()` is
+   * `"CODE:ISSUER"`, and `displayName` is the code. The parsed code and issuer
+   * are checked against the address they were read from, so a contract that
+   * is not the SAC it claims to be is refused rather than mislabelled.
+   *
+   * Any other failure, such as a contract error from `asset_metadata`, is
+   * thrown as {@link ContractCallError}, not masked by the fallback.
+   *
+   * @param sac The asset's Stellar Asset Contract address (C…).
+   * @returns `{ code, issuer, displayName }`; `issuer` is `""` for native XLM.
+   * @throws {ContractCallError} when a read fails for a reason other than a missing function.
+   * @throws {Error} when the fallback finds a contract that is not a Stellar Asset Contract.
+   *
+   * @example
+   * ```ts
+   * const meta = await plimsoll.getAssetMetadata(TESTNET.assets.PUSD!.sac);
+   * console.log(`${meta.displayName} (${meta.code}) issued by ${meta.issuer}`);
+   * ```
+   */
+  async getAssetMetadata(sac: string): Promise<AssetMeta> {
+    try {
+      const v = await this.read(this.ledger, "asset_metadata", [addr(sac)]);
+      if (v != null) return decodeAssetMeta(v as Raw);
+    } catch (err) {
+      if (!isMissingFunctionError(err)) throw err;
+    }
+    return this.assetMetadataFromSac(sac);
+  }
+
+  /** The fallback for {@link getAssetMetadata}: the SAC's own `name()`. */
+  private async assetMetadataFromSac(sac: string): Promise<AssetMeta> {
+    const name = await this.read(new Contract(sac), "name", []);
+    const { code, issuer } = parseSacName(String(name));
+    const asset = issuer ? new Asset(code, issuer) : Asset.native();
+    if (asset.contractId(this.network.networkPassphrase) !== sac) {
+      throw new Error(`${sac} is not the Stellar Asset Contract for ${code}:${issuer || "native"}`);
+    }
+    return { code, issuer, displayName: code };
+  }
+
   async getReporter(address: string): Promise<ReporterInfo | null> {
     return opt(await this.read(this.registry, "get_reporter", [addr(address)]), decodeReporter);
   }
@@ -275,9 +413,58 @@ export class PlimsollContracts extends ContractClient {
 
   async ledgerAdmin(): Promise<string> {
     return String(await this.read(this.ledger, "admin", []));
+  /**
+   * Dry-run `is_covered` through Soroban simulation without signing or
+   * submitting a transaction. Returns the boolean the contract would return,
+   * or throws {@link ContractCallError} when the contract rejects the call
+   * (e.g. the asset is not listed or a parameter is out of range).
+   *
+   * @param sac - SAC address of the asset
+   * @param minBps - minimum coverage BPS required
+   * @param maxAgeSeconds - maximum age for reserve reports and supply snapshots
+   * @param minTier - minimum report tier
+   *
+   * @example
+   * ```ts
+   * const covered = await contracts.simulateCoverage(
+   *   pusdSac,
+   *   10_000,
+   *   7 * 24 * 3600,
+   *   Tier.AuditorSigned,
+   * );
+   * console.log(covered); // true | false
+   * ```
+   */
+  async simulateCoverage(
+    sac: string,
+    minBps: number,
+    maxAgeSeconds: number,
+    minTier: Tier,
+  ): Promise<boolean> {
+    const v = await this.read(this.ledger, "is_covered", [
+      addr(sac),
+      u32(minBps),
+      u64(maxAgeSeconds),
+      u32(minTier),
+    ]);
+    return v === true;
   }
 
   // -- writes: return prepared, unsigned transaction XDR --
+
+  /** Dispute the report identified by SAC and its Unix timestamp in seconds. */
+  async prepareDisputeReport(
+    watcher: string,
+    sac: string,
+    asOf: number | bigint,
+    opts?: PrepareOptions,
+  ): Promise<string> {
+    return this.prepare(
+      watcher,
+      this.ledger.call("dispute_report", addr(watcher), addr(sac), u64(asOf)),
+      opts,
+    );
+  }
 
   /** List a classic asset by SAC address. Anyone may call it. */
   async prepareListAsset(source: string, sac: string, opts?: PrepareOptions): Promise<string> {
@@ -298,21 +485,27 @@ export class PlimsollContracts extends ContractClient {
     );
   }
 
+  /**
+   * Builds the `post_reserve` operation.
+   *
+   * @param a The reserve report parameters.
+   * @returns The `xdr.Operation` for posting reserves.
+   */
+  postReserveOperation(a: ReservePostArgs): xdr.Operation {
+    return this.ledger.call(
+      "post_reserve",
+      addr(a.reporter),
+      addr(a.sac),
+      i128(a.amount),
+      u64(a.asOf),
+      bytes32(a.docHash),
+      str(a.docUri),
+    );
+  }
+
   /** Post a reserve figure. The reporter must be the transaction source. */
   async preparePostReserve(a: ReservePostArgs, opts?: PrepareOptions): Promise<string> {
-    return this.prepare(
-      a.reporter,
-      this.ledger.call(
-        "post_reserve",
-        addr(a.reporter),
-        addr(a.sac),
-        i128(a.amount),
-        u64(a.asOf),
-        bytes32(a.docHash),
-        str(a.docUri),
-      ),
-      opts,
-    );
+    return this.prepare(a.reporter, this.postReserveOperation(a), opts);
   }
 
   async prepareSetReporter(
@@ -332,6 +525,20 @@ export class PlimsollContracts extends ContractClient {
 
   async prepareRevoke(admin: string, reporter: string, opts?: PrepareOptions): Promise<string> {
     return this.prepare(admin, this.registry.call("revoke", addr(reporter)), opts);
+  }
+
+  /** Prepare a dispute_report transaction on the coverage ledger. */
+  async prepareDisputeReport(
+    disputer: string,
+    sac: string,
+    tier: Tier,
+    opts?: PrepareOptions,
+  ): Promise<string> {
+    return this.prepare(
+      disputer,
+      this.ledger.call("dispute_report", addr(disputer), addr(sac), u32(tier)),
+      opts,
+    );
   }
 
   /** Submit a signed transaction and wait for it to land. Returns the hash. */

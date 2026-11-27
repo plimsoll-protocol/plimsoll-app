@@ -4,6 +4,7 @@
   "description": "TypeScript client for the Plimsoll coverage ledger and indexer API",
   "license": "Apache-2.0",
   "type": "module",
+  "sideEffects": false,
   "main": "./dist/index.js",
   "module": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -34,7 +35,8 @@
   "scripts": {
     "build": "tsup src/index.ts --format esm --dts --clean",
     "test": "vitest run",
-    "typecheck": "tsc --noEmit && tsc --noEmit -p examples"
+    "typecheck": "tsc --noEmit && tsc --noEmit -p examples",
+    "size": "size-limit"
   },
   "dependencies": {
     "@stellar/stellar-sdk": "17.2.1",
@@ -42,9 +44,19 @@
     "smol-toml": "1.9.0"
   },
   "devDependencies": {
+    "@size-limit/file": "12.1.0",
     "@types/node": "22.20.5",
+    "size-limit": "12.1.0",
     "tsup": "8.5.1",
     "typescript": "5.9.3",
     "vitest": "5.0.3"
-  }
+  },
+  "size-limit": [
+    {
+      "name": "@plimsoll/sdk (ESM, gzip)",
+      "path": "dist/index.js",
+      "limit": "50 KB",
+      "gzip": true
+    }
+  ]
 }

@@ -13,11 +13,34 @@ const hanging: typeof fetch = (_url, init) =>
   });
 
 describe("IndexerClient options", () => {
-  it("health() calls /healthz", async () => {
-    const f = vi.fn(async () => json({ status: "ok" }));
+  it("health() calls /healthz and returns typed health data", async () => {
+    const f = vi.fn(async () => json({ status: "ok", ingested_to_ledger: 5034661 }));
     const c = new IndexerClient("http://x/", f as unknown as typeof fetch);
-    await expect(c.health()).resolves.toEqual({ status: "ok" });
+    const health = await c.health();
+    expect(health).toEqual({ status: "ok", ingested_to_ledger: 5034661 });
     expect((f.mock.calls[0] as unknown[])[0]).toBe("http://x/healthz");
+  });
+
+  it("health() returns typed lagging status with lag_seconds and last_event_at", async () => {
+    const laggingPayload = {
+      status: "lagging",
+      lag_seconds: 300,
+      last_event_at: "2026-01-01T00:00:00Z",
+      latest_ledger: 5035000,
+      ingested_to_ledger: 5034000,
+    };
+    const f = vi.fn(async () => json(laggingPayload));
+    const c = new IndexerClient("http://x", f as unknown as typeof fetch);
+    const health = await c.health();
+    expect(health.status).toBe("lagging");
+    expect(health.lag_seconds).toBe(300);
+    expect(health.last_event_at).toBe("2026-01-01T00:00:00Z");
+  });
+
+  it("health() throws IndexerError when server returns 503", async () => {
+    const f = vi.fn(async () => json({ error: "database down" }, 503));
+    const c = new IndexerClient("http://x", f as unknown as typeof fetch);
+    await expect(c.health()).rejects.toMatchObject({ name: "IndexerError", status: 503 });
   });
 
   it("sets no signal by default", async () => {
@@ -119,7 +142,11 @@ describe("IndexerClient webhook methods", () => {
 });
 
 describe("IndexerClient batchCoverageStatus", () => {
-  const makeCoverage = (bps: number | null, reportAge: number, supplyAge: number) => ({
+  const makeCoverage = (
+    bps: number | null,
+    reportAge: number,
+    supplyAge: number,
+  ) => ({
     bps,
     ratio: bps != null ? String(bps / 10000) : null,
     tier: "issuer_signed" as const,
@@ -134,7 +161,12 @@ describe("IndexerClient batchCoverageStatus", () => {
     doc_uri: "https://example.com",
   });
 
-  const makeAsset = (sac: string, bps: number | null, reportAge = 60, supplyAge = 60) => ({
+  const makeAsset = (
+    sac: string,
+    bps: number | null,
+    reportAge = 60,
+    supplyAge = 60,
+  ) => ({
     sac,
     code: "TEST",
     issuer: "GABC",
@@ -147,7 +179,9 @@ describe("IndexerClient batchCoverageStatus", () => {
   });
 
   it("returns covered for bps >= 10000 and fresh ages", async () => {
-    const f = vi.fn(async () => json(makeAsset("CAAA", 10_000)));
+    const f = vi.fn(async () =>
+      json(makeAsset("CAAA", 10_000)),
+    );
     const c = new IndexerClient("http://x", f as unknown as typeof fetch);
     const result = await c.batchCoverageStatus(["CAAA"]);
     expect(result.get("CAAA")).toBe("covered");
@@ -207,7 +241,9 @@ describe("IndexerClient batchCoverageStatus", () => {
 
   it("respects custom maxAgeSeconds", async () => {
     const tenDays = 10 * 24 * 3600;
-    const f = vi.fn(async () => json(makeAsset("CAAA", 10_000, tenDays - 1, 60)));
+    const f = vi.fn(async () =>
+      json(makeAsset("CAAA", 10_000, tenDays - 1, 60)),
+    );
     const c = new IndexerClient("http://x", f as unknown as typeof fetch);
     const strictResult = await c.batchCoverageStatus(["CAAA"]);
     expect(strictResult.get("CAAA")).toBe("stale");
@@ -215,5 +251,50 @@ describe("IndexerClient batchCoverageStatus", () => {
       maxAgeSeconds: tenDays,
     });
     expect(laxResult.get("CAAA")).toBe("covered");
+  });
+});
+
+describe("IndexerClient.reporterReports", () => {
+  const REPORT = {
+    sac: "CA",
+    tier: "auditor_signed",
+    amount: "100",
+    as_of: "2026-01-01T00:00:00Z",
+    posted_at: "2026-01-02T00:00:00Z",
+    reporter: "GA",
+    doc_hash: "00",
+    doc_uri: "https://example.com/r.pdf",
+    tx_hash: "ab",
+  };
+
+  it("calls the reporter reports endpoint and maps next_before", async () => {
+    const f = vi.fn(async () => json({ reports: [REPORT], next_before: 41 }));
+    const c = new IndexerClient("http://x", f as unknown as typeof fetch);
+    await expect(c.reporterReports("GA")).resolves.toEqual({ reports: [REPORT], nextBefore: 41 });
+    expect((f.mock.calls[0] as unknown[])[0]).toBe("http://x/v1/reporters/GA/reports");
+  });
+
+  it("sends limit, before and asset as query parameters", async () => {
+    const f = vi.fn(async () => json({ reports: [] }));
+    const c = new IndexerClient("http://x", f as unknown as typeof fetch);
+    await c.reporterReports("G A", { limit: 50, before: 90, asset: "CB" });
+    expect((f.mock.calls[0] as unknown[])[0]).toBe(
+      "http://x/v1/reporters/G%20A/reports?limit=50&before=90&asset=CB",
+    );
+  });
+
+  it("reports the last page as nextBefore null", async () => {
+    const f = vi.fn(async () => json({ reports: [], next_before: null }));
+    const c = new IndexerClient("http://x", f as unknown as typeof fetch);
+    await expect(c.reporterReports("GA")).resolves.toEqual({ reports: [], nextBefore: null });
+  });
+
+  it("throws IndexerError on a 404", async () => {
+    const f = async () => json({ error: "not found" }, 404);
+    const c = new IndexerClient("http://x", f as unknown as typeof fetch);
+    await expect(c.reporterReports("GA")).rejects.toMatchObject({
+      name: "IndexerError",
+      status: 404,
+    });
   });
 });

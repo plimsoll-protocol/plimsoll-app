@@ -3,8 +3,9 @@
 import { safeHref } from "@/lib/safe-href";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
-import { Suspense, useCallback, useEffect, useState } from "react";
+import { Suspense, useCallback, useEffect, useRef, useState } from "react";
 import {
+  Role,
   Tier,
   ago,
   checkStellarToml,
@@ -15,24 +16,37 @@ import {
   parseBreakdown,
   sha256Hex,
   shortAddress,
+  subscribeCoverageEvents,
   tierLabel,
+  type IndexerReconcileStatus,
   type SupplyBreakdown,
   type TomlCheck,
 } from "@plimsoll/sdk";
+import { Breadcrumb } from "@/components/Breadcrumb";
 import {
   CopyButton,
+  DisputeConfirmModal,
   Gauge,
   Skeleton,
   Stat,
   StatusPill,
   TierPill,
+  copyToClipboard,
   nowSecs,
   ratioText,
   statusOf,
+  type DisputedReportDetails,
 } from "@/components/ui";
+import { LiveUpdates } from "@/components/LiveUpdates";
 import { assetFromSearch } from "@/lib/asset-query";
+import { AssetTitleManager, formatAssetTitle } from "@/lib/asset-title";
 import { config, explorer } from "@/lib/config";
+import { connectWallet, connectedWalletAddress, signXdr } from "@/lib/wallet";
+import { reporterHref } from "@/lib/reporter-profile";
+import { EXTERNAL_REL, config, explorer } from "@/lib/config";
 import { embedCode } from "@/lib/badge";
+import { RECONCILE_DOCS, reconcileSummary, reconcileTime } from "@/lib/reconcile";
+import { connectWallet, signXdr } from "@/lib/wallet";
 import { setLastAsset } from "@/lib/session";
 import {
   contracts,
@@ -43,6 +57,44 @@ import {
   type Origin,
   type ReportView,
 } from "@/lib/data";
+import { useAutoRefresh, useRefreshIntervalSetting } from "@/lib/refresh-interval";
+import { RefreshControls } from "@/components/RefreshControls";
+import { HistoryChart, type HistoryPoint } from "@/components/HistoryChart";
+import {
+  addWatch,
+  isWatching,
+  notifyIfUnder,
+  removeWatch,
+  requestNotificationPermission,
+} from "@/lib/watchlist";
+import { useAutoRefresh } from "@/lib/refresh";
+import { logger } from "@/lib/logger";
+import {
+  confirmedIn,
+  loadPending,
+  onPendingChange,
+  pendingFor,
+  removePending,
+  reportFromEvent,
+  toView,
+  withReport,
+  type PendingReport,
+} from "@/lib/pending-reports";
+
+/** How often to re-read the asset while a report is pending, in case an SSE event was missed. */
+const PENDING_POLL_MS = 15_000;
+
+/**
+ * A fresh read merged with what the page already shows: a report the page
+ * took from the SSE stream stays until the source it reads from catches up,
+ * rather than flicking back to the older one.
+ */
+function mergeFresh(prev: AssetView | null | undefined, fresh: AssetView): AssetView {
+  if (!prev || prev.sac !== fresh.sac) return fresh;
+  return Object.values(prev.reports)
+    .filter((r): r is ReportView => r !== undefined)
+    .reduce((a, r) => withReport(a, r), fresh);
+}
 
 export default function AssetPage() {
   return (
@@ -54,30 +106,217 @@ export default function AssetPage() {
 
 function AssetDetail() {
   const query = assetFromSearch(useSearchParams().toString(), config.network.networkPassphrase);
+  return <AssetContent key={query.ok ? query.sac : ""} query={query} />;
+}
+
+function AssetContent({ query }: { query: ReturnType<typeof assetFromSearch> }) {
   const sac = query.ok ? query.sac : "";
   const [asset, setAsset] = useState<AssetView | null | undefined>(undefined);
-  const [error, setError] = useState<string | null>(null);
-  const [now, setNow] = useState(nowSecs());
   const [names, setNames] = useState<ReadonlyMap<string, string>>(new Map());
+  const [intervalValue, setIntervalValue] = useRefreshIntervalSetting();
+  const cancelRef = useRef<(() => void) | null>(null);
+  const [history, setHistory] = useState<HistoryPoint[] | null>(null);
+  const [disputeReport, setDisputeReport] = useState<DisputedReportDetails | null>(null);
+  const [disputeSubmitting, setDisputeSubmitting] = useState(false);
+  const [disputeError, setDisputeError] = useState<string | null>(null);
+  const [disputeNotice, setDisputeNotice] = useState<string | null>(null);
+
+  const handleConfirmDispute = async () => {
+    if (!disputeReport) return;
+    setDisputeSubmitting(true);
+    setDisputeError(null);
+    try {
+      const source = await connectWallet();
+      const xdr = await contracts.prepareDisputeReport(
+        source,
+        disputeReport.sac ?? asset?.sac ?? sac,
+        disputeReport.tier ?? Tier.Transcribed,
+      );
+      const signed = await signXdr(xdr, source);
+      await contracts.submit(signed);
+      setDisputeNotice("Dispute submitted successfully.");
+      setDisputeReport(null);
+    } catch (err) {
+      setDisputeError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setDisputeSubmitting(false);
+    }
+  };
+  const [pending, setPending] = useState<PendingReport[]>([]);
 
   useEffect(() => {
+    if (!sac || !indexer) return;
+    Promise.all([indexer.reportHistory(sac, 60), indexer.supplyHistory(sac, 1)])
+      .then(([reports, supplies]) => {
+        const latestSupply = BigInt(supplies[0]?.amount ?? "0");
+        if (latestSupply === 0n || reports.length === 0) return;
+        const pts: HistoryPoint[] = reports
+          .map((r) => {
+            const t = Math.floor(new Date(r.posted_at).getTime() / 1000);
+            const reserves = BigInt(r.amount);
+            const bps = latestSupply > 0n
+              ? Math.min(Number((reserves * 10_000n) / latestSupply), 65535)
+              : 0;
+            return { t, bps };
+          })
+          .sort((a, b) => a.t - b.t);
+        setHistory(pts);
+      })
+      .catch(() => {/* indexer unavailable; leave history null */});
+  }, [sac]);
+
+  const fetch = useCallback(() => {
+  const [loadedAsset, setLoadedAsset] = useState<{
+    sac: string;
+    asset: AssetView | null;
+  } | null>(null);
+  const [error, setError] = useState<{ sac: string; message: string } | null>(null);
+  const [now, setNow] = useState(nowSecs());
+  const [names, setNames] = useState<ReadonlyMap<string, string>>(new Map());
+  const titleManager = useRef<AssetTitleManager | null>(null);
+  const currentAsset = loadedAsset?.sac === sac ? loadedAsset.asset : undefined;
+  const currentCoverage = currentAsset?.coverage;
+  const currentError = error?.sac === sac ? error.message : null;
+  const title =
+    query.ok && !currentError && currentAsset && currentCoverage
+      ? formatAssetTitle(
+          currentAsset.code,
+          currentCoverage.bps,
+          statusOf(
+            currentCoverage.bps,
+            currentCoverage.reportAsOf,
+            currentCoverage.supplyPostedAt,
+            now,
+          ),
+        )
+      : null;
+
+  useEffect(() => {
+    let cancelled = false;
     if (!sac) return;
+    if (cancelRef.current) cancelRef.current();
+    let cancelled = false;
+    cancelRef.current = () => {
+      cancelled = true;
+    };
     loadAsset(sac)
       .then((a) => {
+        if (cancelled) return;
         setAsset(a);
+        setLoadedAsset({ sac, asset: a });
         setNow(nowSecs());
+        setError(null);
         if (!a) return;
         const addresses = Object.values(a.reports)
           .filter((r): r is ReportView => r !== undefined)
           .map((r) => r.reporter);
         if (a.supply) addresses.push(a.supply.poster);
-        // Names are an improvement on the addresses already shown, not a
-        // precondition for them, so a failed lookup leaves the page as it is.
         loadReporterNames(addresses)
-          .then(setNames)
+          .then((n) => {
+            if (!cancelled) setNames(n);
+          })
           .catch((e: unknown) => console.warn("Could not load reporter names", e));
+          .then(setNames)
+          .catch((e: unknown) => logger.warn("Could not load reporter names", e));
       })
-      .catch((e: unknown) => setError(e instanceof Error ? e.message : String(e)));
+      .catch((e: unknown) => {
+        if (!cancelled) setError(e instanceof Error ? e.message : String(e));
+      });
+  const load = useCallback(async () => {
+    if (!sac) return;
+    const a = await loadAsset(sac);
+    setAsset(a);
+    if (!a) return;
+    const addresses = Object.values(a.reports)
+      .filter((r): r is ReportView => r !== undefined)
+      .map((r) => r.reporter);
+    if (a.supply) addresses.push(a.supply.poster);
+    // Names are an improvement on the addresses already shown, not a
+    // precondition for them, so a failed lookup leaves the page as it is.
+    try {
+      setNames(await loadReporterNames(addresses));
+    } catch (e: unknown) {
+      console.warn("Could not load reporter names", e);
+    }
+          .then((loadedNames) => {
+            if (!cancelled) setNames(loadedNames);
+          })
+          .catch((e: unknown) => {
+            if (!cancelled) console.warn("Could not load reporter names", e);
+          });
+      })
+      .catch((e: unknown) => {
+        if (!cancelled) {
+          setError({ sac, message: e instanceof Error ? e.message : String(e) });
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [sac]);
+  const { now, refreshing, error, refresh } = useAutoRefresh(load);
+
+  const { refresh } = useAutoRefresh(fetch, intervalValue, sac);
+
+  // Reports this browser has signed for the asset but not yet seen confirmed.
+  useEffect(() => {
+    if (!sac) return;
+    const sync = () => setPending(pendingFor(loadPending(), sac));
+    sync();
+    return onPendingChange(sync);
+  }, [sac]);
+
+  // A pending report that the loaded data already contains is confirmed.
+  useEffect(() => {
+    if (!asset || pending.length === 0) return;
+    removePending(confirmedIn(pending, asset));
+  }, [asset, pending]);
+
+  // A quiet re-read: a failure leaves the page as it is.
+  const refresh = useCallback(() => {
+    if (!sac) return;
+    loadAsset(sac)
+      .then((fresh) => {
+        if (fresh) setAsset((prev) => mergeFresh(prev, fresh));
+        setNow(nowSecs());
+      })
+      .catch((e: unknown) => console.warn("Could not refresh the asset", e));
+  }, [sac]);
+
+  // While something is pending, listen for the indexer's event and swap the
+  // confirmed report in as soon as it arrives. A poll backs the stream up, in
+  // case the event landed before the stream opened, or there is no indexer.
+  const waiting = pending.length > 0;
+  useEffect(() => {
+    if (!sac || !waiting) return;
+    const sub = config.indexerUrl
+      ? subscribeCoverageEvents(config.indexerUrl.replace(/\/+$/, ""), sac, (ev) => {
+          if (ev.kind !== "report_posted") return;
+          const report = reportFromEvent(ev);
+          if (report) setAsset((prev) => (prev ? withReport(prev, report) : prev));
+          // Coverage and supply figures move with the report: read them again.
+          refresh();
+        })
+      : null;
+    const poll = window.setInterval(refresh, PENDING_POLL_MS);
+    return () => {
+      sub?.unsubscribe();
+      window.clearInterval(poll);
+    };
+  }, [sac, waiting, refresh]);
+
+  useEffect(() => {
+    titleManager.current ??= new AssetTitleManager(document);
+    titleManager.current.update(title);
+  }, [title]);
+
+  useEffect(() => () => titleManager.current?.restore(), []);
+
+  // Remember the last asset opened so the homepage can restore it after a
+  // reload. Every navigation path that opens an asset passes through this
+  // page, so storing here keeps the value consistent.
+  useEffect(() => {
+    if (sac) setLastAsset(sac);
   }, [sac]);
 
   // Remember the last asset opened so the homepage can restore it after a
@@ -106,13 +345,14 @@ function AssetDetail() {
       </section>
     );
   }
-  if (error)
+  if (error && asset === undefined)
+  if (currentError)
     return (
       <p className="notice notice-bad" role="alert">
-        Could not load this asset: {error}
+        Could not load this asset: {currentError}
       </p>
     );
-  if (asset === undefined) {
+  if (currentAsset === undefined) {
     return (
       <div style={{ display: "grid", gap: 14 }}>
         <Skeleton height={40} width="30%" />
@@ -121,7 +361,7 @@ function AssetDetail() {
       </div>
     );
   }
-  if (asset === null) {
+  if (currentAsset === null) {
     return (
       <p className="notice notice-info">
         This asset is not listed on the coverage ledger. <Link href="/list/">List it</Link>.
@@ -129,18 +369,30 @@ function AssetDetail() {
     );
   }
 
+  const asset = currentAsset;
   const c = asset.coverage;
   const status = statusOf(c?.bps, c?.reportAsOf, c?.supplyPostedAt, now);
   const tiers = [Tier.AuditorSigned, Tier.IssuerSigned, Tier.Transcribed];
 
   return (
     <>
+      <Breadcrumb
+        items={[
+          { label: "Home", href: "/" },
+          { label: "Assets", href: "/" },
+          { label: asset.code },
+        ]}
+      />
+      {error ? (
+        <p className="notice notice-bad mt" role="status">
+          Could not refresh this asset: {error}
+        </p>
+      ) : null}
       <p className="sub">
-        <Link href="/">All assets</Link> / {asset.code}{" "}
-        <Link href={`/asset/history/?sac=${asset.sac}`} style={{ marginLeft: 8 }}>
-          History
-        </Link>
+        <Link href={`/asset/history/?sac=${asset.sac}`}>History</Link>
       </p>
+      <LiveUpdates sac={asset.sac} onRefresh={() => setRefresh((n) => n + 1)} />
+      <WatchButton sac={asset.sac} code={asset.code} bps={c?.bps} status={status} />
       <div className="spread">
         <div>
           <h1 style={{ marginBottom: 4 }}>{asset.code}</h1>
@@ -159,9 +411,36 @@ function AssetDetail() {
             {asset.toml?.org_name ? <> · {asset.toml.org_name}</> : null}
           </div>
         </div>
+        <div className="row" style={{ gap: 12, alignItems: "flex-start", flexWrap: "wrap" }}>
+          <RefreshControls
+            interval={intervalValue}
+            onChange={setIntervalValue}
+            onRefresh={refresh}
+          />
+          <div className="row">
+            <StatusPill status={status} />
+            {c ? <TierPill tier={c.tier} /> : null}
+          </div>
         <div className="row">
           <StatusPill status={status} />
           {c ? <TierPill tier={c.tier} /> : null}
+          <Link
+            href={`/share/?sac=${encodeURIComponent(asset.sac)}`}
+            className="button secondary"
+            style={{ padding: "6px 12px", fontSize: "0.85rem" }}
+          >
+            Share ↗
+          </Link>
+          <button
+            type="button"
+            className="secondary"
+            onClick={refresh}
+            disabled={refreshing}
+            aria-label={`Refresh ${asset.code}`}
+            style={{ padding: "3px 10px", fontSize: "0.82rem" }}
+          >
+            {refreshing ? "Refreshing…" : "Refresh"}
+          </button>
         </div>
       </div>
 
@@ -180,10 +459,18 @@ function AssetDetail() {
                 : "Needs both a supply snapshot and a reserve report."}
             </div>
           </div>
-          <LiveCheck sac={asset.sac} />
+          <div className="asset-print-hide"><LiveCheck sac={asset.sac} /></div>
         </div>
         <div className="mt">
           <Gauge bps={c?.bps} status={status} />
+          {c ? (
+            <div className="gauge-print asset-print-only" aria-hidden="true">
+              <div
+                className={`gauge-print-fill ${status}`}
+                style={{ width: `${Math.min((c.bps / 12500) * 100, 100)}%` }}
+              />
+            </div>
+          ) : null}
         </div>
       </section>
 
@@ -214,17 +501,39 @@ function AssetDetail() {
             </>
           }
           sub={
-            <a href={explorer.contract(asset.sac)} target="_blank" rel="noreferrer">
-              explorer
+            <a href={explorer.contract(asset.sac)} target="_blank" rel={EXTERNAL_REL}>
+              View on Stellar Expert
             </a>
           }
         />
       </div>
 
-      <h2>Reserve reports</h2>
+      <div className="spread">
+        <h2>Reserve reports</h2>
+        {!watcher && Object.values(asset.reports).some(Boolean) ? (
+          <button
+            type="button"
+            className="secondary"
+            onClick={connectWatcher}
+            disabled={connecting}
+          >
+            {connecting ? "Checking wallet…" : "Connect watcher wallet"}
+          </button>
+        ) : null}
+      </div>
+      {walletStatus ? (
+        <p className="sub" role="status">
+          {walletStatus}
+        </p>
+      ) : null}
       <p className="sub">
         Latest report per signer tier. Coverage uses the freshest one. Each report carries the
         SHA-256 of its source document, so you can check the file has not changed.
+      </p>
+      <p className="sub" aria-live="polite">
+        {pending.length > 0
+          ? `${pending.length === 1 ? "1 report you posted is" : `${pending.length} reports you posted are`} waiting for confirmation.`
+          : null}
       </p>
       <div className="table-wrap">
         <table>
@@ -236,10 +545,12 @@ function AssetDetail() {
               <th>As of</th>
               <th>Signed by</th>
               <th>Document</th>
+              {watcher ? <th scope="col">Actions</th> : null}
+              <th>Action</th>
             </tr>
           </thead>
           <tbody>
-            {tiers.map((tier) => {
+            {tiers.flatMap((tier) => {
               const r = asset.reports[tier];
               return r ? (
                 <ReportRow
@@ -249,19 +560,157 @@ function AssetDetail() {
                   issuer={asset.issuer}
                   now={now}
                   name={names.get(r.reporter)}
+                  onDispute={watcher && asset.sac === sac ? () => setSelected(r) : undefined}
+                  onDispute={(rep, bps) => {
+                    setDisputeNotice(null);
+                    setDisputeError(null);
+                    setDisputeReport({
+                      reporter: rep.reporter,
+                      reporterName: names.get(rep.reporter),
+                      asOf: rep.asOf,
+                      bps,
+                      tier: rep.tier,
+                      amount: rep.amount,
+                      sac: asset.sac,
+                    });
+                  }}
                 />
               ) : (
                 <tr key={tier}>
                   <td>{tierLabel(tier)}</td>
-                  <td colSpan={5} className="sub">
+                  <td colSpan={watcher ? 6 : 5} className="sub">
+                  <td colSpan={7} className="sub">
                     No report at this tier.
                   </td>
                 </tr>
               );
+              // Newest pending report first, above the confirmed one it will replace.
+              const rows = pendingFor(pending, asset.sac)
+                .filter((p) => p.tier === tier)
+                .reverse()
+                .map((p) => (
+                  <ReportRow
+                    key={`pending-${p.txHash}`}
+                    report={toView(p)}
+                    pending
+                    supply={asset.supply?.amount}
+                    issuer={asset.issuer}
+                    now={now}
+                    name={names.get(p.reporter)}
+                  />
+                ));
+              if (r) {
+                rows.push(
+                  <ReportRow
+                    key={tier}
+                    report={r}
+                    supply={asset.supply?.amount}
+                    issuer={asset.issuer}
+                    now={now}
+                    name={names.get(r.reporter)}
+                  />,
+                );
+              } else if (rows.length === 0) {
+                rows.push(
+                  <tr key={tier}>
+                    <td>{tierLabel(tier)}</td>
+                    <td colSpan={5} className="sub">
+                      No report at this tier.
+                    </td>
+                  </tr>,
+                );
+              }
+              return rows;
             })}
           </tbody>
         </table>
       </div>
+
+      <dialog
+        ref={dialog}
+        className="wallet-dialog"
+        aria-labelledby="dispute-title"
+        onClose={() => setSelected(null)}
+        onCancel={(event) => {
+          if (inFlight.current) event.preventDefault();
+        }}
+      >
+        <div className="wallet-dialog-head">
+          <h2 id="dispute-title">Dispute reserve report</h2>
+        </div>
+        {selected ? (
+          <div className="wallet-dialog-body">
+            <dl>
+              <dt>Asset</dt>
+              <dd>
+                {asset.code} <code className="break">{asset.sac}</code>
+              </dd>
+              <dt>Tier</dt>
+              <dd>{tierLabel(selected.tier)}</dd>
+              <dt>Reserves</dt>
+              <dd>{formatUnits(selected.amount)}</dd>
+              <dt>As of (UTC)</dt>
+              <dd>{new Date(selected.asOf * 1000).toISOString()}</dd>
+              <dt>Reporter</dt>
+              <dd>
+                <code className="break">{selected.reporter}</code>
+              </dd>
+            </dl>
+            <div className="row">
+              <button
+                ref={cancelButton}
+                type="button"
+                className="secondary"
+                disabled={submitting}
+                onClick={() => dialog.current?.close()}
+              >
+                Cancel
+              </button>
+              <button type="button" disabled={submitting} onClick={dispute}>
+                {submitting ? "Submitting dispute…" : "Confirm dispute"}
+              </button>
+            </div>
+          </div>
+        ) : null}
+      </dialog>
+      <div className="dispute-toast" aria-live="polite">
+        {outcome ? (
+          <div className={`notice ${"hash" in outcome ? "notice-ok" : "notice-bad"}`}>
+            {"hash" in outcome ? (
+              <>
+                Dispute submitted.{" "}
+                <a href={explorer.tx(outcome.hash)} target="_blank" rel="noreferrer">
+                  View transaction
+                </a>
+              </>
+            ) : (
+              <>Dispute failed. {outcome.error}</>
+            )}{" "}
+            <button type="button" className="secondary" onClick={() => setOutcome(null)}>
+              Dismiss
+            </button>
+          </div>
+        ) : null}
+      </div>
+      {disputeNotice ? (
+        <p className="notice notice-ok mt" role="status">
+          {disputeNotice}
+        </p>
+      ) : null}
+
+      <DisputeConfirmModal
+        isOpen={disputeReport !== null}
+        report={disputeReport}
+        onConfirm={handleConfirmDispute}
+        onCancel={() => {
+          if (!disputeSubmitting) {
+            setDisputeReport(null);
+            setDisputeError(null);
+          }
+        }}
+        submitting={disputeSubmitting}
+        error={disputeError}
+      />
 
       {asset.supply ? (
         <SupplySection
@@ -271,10 +720,19 @@ function AssetDetail() {
         />
       ) : null}
 
+      <ReconcileSection sac={asset.sac} />
+      {history && history.length > 1 ? (
+        <section className="mt" aria-labelledby="history-h">
+          <h2 id="history-h">Coverage history</h2>
+          <p className="sub">Reserve coverage ratio from the last {history.length} reports. Timestamps are UTC.</p>
+          <HistoryChart points={history} />
+        </section>
+      ) : null}
+
       <h2>What the issuer publishes</h2>
       <IssuerToml asset={asset} />
 
-      <EmbedBadge sac={asset.sac} />
+      <div className="asset-print-hide"><EmbedBadge sac={asset.sac} /></div>
     </>
   );
 }
@@ -303,19 +761,32 @@ function ReportRow({
   issuer,
   now,
   name,
+  onDispute,
+  pending = false,
 }: {
   report: ReportView;
   supply: bigint | undefined;
   issuer: string;
   now: number;
   name?: string;
+  onDispute?: () => void;
+  onDispute?: (report: ReportView, bps: number) => void;
+  /** Signed by this browser, not yet confirmed by the indexer. */
+  pending?: boolean;
 }) {
+  const bps = supply && supply > 0n ? Number((report.amount * 10_000n) / supply) : 0;
   const covers =
-    supply && supply > 0n ? bpsToPercent(Number((report.amount * 10_000n) / supply)) : "—";
+    supply && supply > 0n ? bpsToPercent(bps) : "—";
   return (
-    <tr>
+    <tr className={pending ? "row-pending" : undefined}>
       <td>
         <TierPill tier={report.tier} />
+        {pending ? (
+          <div>
+            <span className="pill pill-pending">Pending</span>
+            <div className="sub">waiting for confirmation</div>
+          </div>
+        ) : null}
       </td>
       <td className="num">{formatUnits(report.amount)}</td>
       <td className="num">{covers}</td>
@@ -328,12 +799,16 @@ function ReportRow({
             underneath, so the claim stays checkable against the ledger. An
             issuer signs with its own account and is not a registered reporter,
             so it has no name here and keeps the note it always had. */}
-        {name ? <div>{name}</div> : null}
+        {name ? (
+          <div>
+            <Link href={reporterHref(report.reporter)}>{name}</Link>
+          </div>
+        ) : null}
         <a
           className={name ? "mono sub" : "mono"}
           href={explorer.account(report.reporter)}
           target="_blank"
-          rel="noreferrer"
+          rel={EXTERNAL_REL}
         >
           {shortAddress(report.reporter)}
         </a>{" "}
@@ -362,6 +837,29 @@ function ReportRow({
             Not a web link, so it is shown as text and not checked here.
           </span>
         )}
+      </td>
+      {onDispute ? (
+        <td>
+          <button
+            type="button"
+            className="secondary"
+            onClick={onDispute}
+            aria-label={`Dispute ${tierLabel(report.tier)} report`}
+          >
+            Dispute
+          </button>
+        </td>
+      ) : null}
+      <td>
+        <button
+          type="button"
+          className="secondary"
+          style={{ padding: "2px 8px", fontSize: "0.8rem" }}
+          onClick={() => onDispute?.(report, bps)}
+          title="Dispute this reserve report"
+        >
+          Dispute
+        </button>
       </td>
     </tr>
   );
@@ -620,6 +1118,81 @@ function SupplySection({
 }
 
 /**
+ * The indexer's state reconciler for this asset: when it last ran and whether
+ * that run succeeded. Collapsed by default because it is diagnostic detail
+ * about where a figure came from, not part of the coverage reading.
+ */
+function ReconcileSection({ sac }: { sac: string }) {
+  const [status, setStatus] = useState<IndexerReconcileStatus | null | undefined>(undefined);
+  const [now, setNow] = useState(nowSecs());
+
+  useEffect(() => {
+    if (!indexer) return;
+    let cancelled = false;
+    indexer
+      .reconcileStatus(sac)
+      .then((s) => {
+        if (cancelled) return;
+        setStatus(s);
+        setNow(nowSecs());
+      })
+      .catch((e: unknown) => {
+        // A status that cannot be read is not proof the job is broken, and the
+        // section still has to say something: no status reads as not running.
+        console.warn("Could not read the reconciler status", e);
+        if (!cancelled) setStatus(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [sac]);
+
+  if (!indexer) return null;
+  if (status === undefined) return <p className="sub mt">Checking the reconciler…</p>;
+
+  const summary = reconcileSummary(status, sac, now);
+  const asset = status?.assets?.find((a) => a.sac === sac) ?? null;
+  const lastRun = reconcileTime(asset?.last_run_at ?? status?.last_run_at);
+  const outcome = asset?.outcome ?? status?.last_run_outcome ?? null;
+  const error = asset?.error ? `: ${asset.error.slice(0, 200)}` : "";
+
+  return (
+    <details className="card reconcile mt">
+      <summary>
+        <span className="eyebrow">Reconciler</span> {summary.headline}
+      </summary>
+      <p className="sub" style={{ marginTop: 10 }}>
+        {summary.detail}
+      </p>
+      <dl className="reconcile-facts">
+        <dt>Last run</dt>
+        <dd>{lastRun ? <time dateTime={lastRun}>{lastRun}</time> : "not reported"}</dd>
+        <dt>Outcome</dt>
+        <dd>
+          {outcome === "ok"
+            ? "Completed"
+            : outcome === "failed"
+              ? `Failed${error}`
+              : "not reported"}
+        </dd>
+        <dt>Rows recovered</dt>
+        <dd>
+          {asset
+            ? `${asset.recovered_supply ?? 0} supply, ${asset.recovered_reports ?? 0} report`
+            : "not reported for this asset"}
+        </dd>
+      </dl>
+      <p className="sub" style={{ marginBottom: 0 }}>
+        <a href={RECONCILE_DOCS} target="_blank" rel="noreferrer">
+          How the state reconciler works
+        </a>{" "}
+        in the indexer docs.
+      </p>
+    </details>
+  );
+}
+
+/**
  * The issuer's SEP-1 stellar.toml entry for this asset. Uses the indexer's
  * copy when it confirms the asset; otherwise checks live from the browser,
  * so a newly published file shows up without waiting for the indexer.
@@ -710,19 +1283,37 @@ function IssuerToml({ asset }: { asset: AssetView }) {
   );
 }
 
+type CopyState = "idle" | "copied" | "failed";
+
 function EmbedBadge({ sac }: { sac: string }) {
-  const [copied, setCopied] = useState(false);
+  const [state, setState] = useState<CopyState>("idle");
+  const timeout = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const snippetRef = useRef<HTMLPreElement>(null);
   const origin = typeof window !== "undefined" ? window.location.origin : "";
   const snippet = embedCode(sac, { origin, basePath: config.basePath });
 
+  useEffect(
+    () => () => {
+      if (timeout.current) clearTimeout(timeout.current);
+    },
+    [],
+  );
+
   const copy = async () => {
-    try {
-      await navigator.clipboard.writeText(snippet);
-      setCopied(true);
-      window.setTimeout(() => setCopied(false), 2000);
-    } catch {
-      setCopied(false);
-    }
+    const copied = await copyToClipboard(snippet);
+    setState(copied ? "copied" : "failed");
+    if (timeout.current) clearTimeout(timeout.current);
+    timeout.current = setTimeout(() => setState("idle"), 2000);
+    if (copied) return;
+    // No clipboard API (or permission denied): select the snippet in place so
+    // the reader can copy it with the keyboard instead.
+    const pre = snippetRef.current;
+    const selection = typeof window === "undefined" ? null : window.getSelection();
+    if (!pre || !selection) return;
+    const range = document.createRange();
+    range.selectNodeContents(pre);
+    selection.removeAllRanges();
+    selection.addRange(range);
   };
 
   return (
@@ -731,10 +1322,65 @@ function EmbedBadge({ sac }: { sac: string }) {
       <p className="sub">
         Copy this snippet to show a live reserve-coverage badge that links back to this asset page.
       </p>
-      <pre style={{ overflowX: "auto", margin: "8px 0" }}>{snippet}</pre>
+      <pre ref={snippetRef} tabIndex={0} style={{ overflowX: "auto", margin: "8px 0" }}>{snippet}</pre>
       <button type="button" className="secondary" onClick={copy}>
-        {copied ? "Copied" : "Copy embed code"}
+        {state === "copied" ? "Copied!" : "Copy embed code"}
       </button>
+      <p className="sub" role="status" aria-live="polite" style={{ margin: "8px 0 0" }}>
+        {state === "copied"
+          ? "Snippet copied to the clipboard."
+          : state === "failed"
+            ? "Copying is unavailable here. The snippet is selected above — press Ctrl/Cmd+C to copy it."
+            : null}
+      </p>
     </section>
+// ---- Watchlist ---------------------------------------------------------------
+
+interface WatchButtonProps {
+  sac: string;
+  code: string;
+  bps: number | undefined;
+  status: ReturnType<typeof statusOf>;
+}
+
+/**
+ * A toggle button that adds/removes the asset from the browser-local watchlist
+ * and fires a Notification API alert when coverage drops below the threshold.
+ */
+function WatchButton({ sac, code, bps, status }: WatchButtonProps) {
+  const [watching, setWatching] = useState(() => {
+    if (typeof window === "undefined") return false;
+    return isWatching(sac);
+  });
+
+  const toggle = useCallback(async () => {
+    if (watching) {
+      removeWatch(sac);
+      setWatching(false);
+    } else {
+      const granted = await requestNotificationPermission();
+      addWatch({ sac, code, thresholdBps: 10_000 });
+      setWatching(true);
+      if (granted && bps != null) {
+        notifyIfUnder(sac, code, bps, status);
+      }
+    }
+  }, [watching, sac, code, bps, status]);
+
+  return (
+    <button
+      type="button"
+      className="secondary"
+      onClick={() => void toggle()}
+      aria-pressed={watching}
+      style={{ marginBottom: 8 }}
+      title={
+        watching
+          ? "Remove from watchlist"
+          : "Watch this asset — get a browser notification when coverage drops below 100%"
+      }
+    >
+      {watching ? "★ Watching" : "☆ Watch"}
+    </button>
   );
 }

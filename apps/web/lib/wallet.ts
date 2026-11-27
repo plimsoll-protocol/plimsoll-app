@@ -43,16 +43,24 @@ let connecting: Promise<string> | null = null;
  * Varial module; the ID is stable, so it is read from the module itself.
  */
 async function loadKit(): Promise<{ kit: Kit; options: WalletOption[] }> {
-  const [sdk, varial, xbull, albedo, lobstr, hana] = await Promise.all([
+  const [sdk, varial, xbull, albedo, lobstr, hana, ledgerResult] = await Promise.all([
     import("@creit.tech/stellar-wallets-kit/sdk"),
     import("@creit.tech/stellar-wallets-kit/modules/varial"),
     import("@creit.tech/stellar-wallets-kit/modules/xbull"),
     import("@creit.tech/stellar-wallets-kit/modules/albedo"),
     import("@creit.tech/stellar-wallets-kit/modules/lobstr"),
     import("@creit.tech/stellar-wallets-kit/modules/hana"),
+    // Ledger transport is optional — hardware wallet support. Some browsers or
+    // environments may not support it (no WebUSB/WebHID); we catch and continue.
+    import("@creit.tech/stellar-wallets-kit/modules/ledger").catch(() => null),
   ]);
 
-  const definitions = [
+  const definitions: Array<{
+    name: string;
+    hint: string;
+    installUrl: string;
+    module: ModuleInterface;
+  }> = [
     {
       name: "Freighter",
       hint: "Browser extension",
@@ -85,6 +93,34 @@ async function loadKit(): Promise<{ kit: Kit; options: WalletOption[] }> {
     },
   ];
 
+  // Ledger hardware wallet: requires WebUSB or WebHID; silently skipped when
+  // the browser or OS does not expose the transport.
+  const ledgerResult = await import("@creit.tech/stellar-wallets-kit/modules/ledger").catch(
+    () => null,
+  );
+  if (ledgerResult) {
+    try {
+      const { LedgerModule } = ledgerResult as {
+        LedgerModule: new () => ModuleInterface;
+      };
+  if (ledgerResult) {
+    try {
+      const LedgerModule = (ledgerResult as { LedgerModule: new () => ModuleInterface }).LedgerModule;
+      definitions.push({
+        name: "Ledger",
+        hint: "Hardware wallet via USB/HID",
+        installUrl: "https://www.ledger.com/",
+        module: new LedgerModule(),
+      });
+    } catch {
+      // Transport not available in this browser/OS — skip silently.
+        module: new LedgerModule() as ModuleInterface,
+      });
+    } catch {
+      // LedgerModule constructor failed — transport not supported in this environment.
+    }
+  }
+
   const options = await Promise.all(
     definitions.map(async (definition) => ({
       ...definition,
@@ -108,24 +144,28 @@ function ensureKit(): Promise<{ kit: Kit; options: WalletOption[] }> {
   return kitPromise;
 }
 
+export function connectedWalletAddress(): string | null {
+  return connection?.address ?? null;
+}
+
 /** Ask the user which wallet to use, then connect it. */
-export function connectWallet(): Promise<string> {
+export function connectWallet(chooseAnother = false): Promise<string> {
   if (!connecting) {
-    connecting = connectOnce().finally(() => {
+    connecting = connectOnce(chooseAnother).finally(() => {
       connecting = null;
     });
   }
   return connecting;
 }
 
-async function connectOnce(): Promise<string> {
+async function connectOnce(chooseAnother: boolean): Promise<string> {
   if (typeof window === "undefined" || typeof document === "undefined") {
     throw new WalletError("Wallets can only be connected in a browser.");
   }
 
   const { kit: wallets, options } = await ensureKit();
 
-  if (connection) {
+  if (connection && !chooseAnother) {
     const mismatch = await checkNetwork(connection.module, connection.name);
     if (mismatch) {
       await wallets.disconnect().catch(() => undefined);
@@ -137,6 +177,11 @@ async function connectOnce(): Promise<string> {
 
   const choice = await pickWallet(options);
   if (!choice) throw new WalletError("No wallet was connected.");
+
+  if (connection) {
+    await wallets.disconnect();
+    connection = null;
+  }
 
   try {
     wallets.setWallet(choice.id);
@@ -313,7 +358,7 @@ function pickWallet(options: WalletOption[]): Promise<WalletOption | null> {
     const foot = document.createElement("p");
     foot.className = "sub wallet-dialog-foot";
     foot.textContent =
-      "Freighter, xBull, Albedo, Lobstr and Hana are supported. Plimsoll never sees your keys; you approve every signature in the wallet.";
+      "Freighter, xBull, Albedo, Lobstr, Hana and Ledger hardware wallets are supported. Plimsoll never sees your keys; you approve every signature in the wallet.";
     body.append(foot);
 
     dialog.append(head, body);
