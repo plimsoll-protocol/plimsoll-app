@@ -1,10 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import {
-  attemptRestore,
-  clearLastAsset,
-  getLastAsset,
-  setLastAsset,
-} from "../lib/session";
+import { attemptRestore, clearLastAsset, getLastAsset, setLastAsset } from "../lib/session";
 
 function makeSessionStore(): Storage {
   const data = new Map<string, string>();
