@@ -51,6 +51,8 @@ jobs:
   a11y:
     name: accessibility
     if: github.event_name != 'schedule'
+  a11y:
+    name: a11y
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -68,6 +70,15 @@ jobs:
       - name: Run visual regression tests
         run: npm run test:visual
       - name: Upload diff artifacts on failure
+      - name: Build SDK
+        run: npm run build -w @plimsoll/sdk
+      - name: Build web
+        run: npm run build -w @plimsoll/web
+      - name: Install Playwright browser
+        run: npx playwright install --with-deps chromium
+      - name: Run accessibility tests
+        run: npm run test:e2e -w @plimsoll/web
+      - name: Upload the Playwright report on failure
         if: failure()
         uses: actions/upload-artifact@v4
         with:
@@ -81,6 +92,8 @@ jobs:
       # violation fails the job.
       - name: Accessibility tests
         run: npm run test:a11y
+          path: apps/web/playwright-report/
+          retention-days: 7
 
   live:
     name: live testnet

@@ -4,12 +4,13 @@ import Link from "next/link";
 <<<<<<< HEAD
 <<<<<<< HEAD
 import { useCallback, useRef, useState } from "react";
-=======
 import { useEffect, useRef, useState } from "react";
 >>>>>>> pr-160
 =======
 import { useEffect, useMemo, useState } from "react";
 >>>>>>> pr-184
+=======
+import { useEffect, useRef, useState } from "react";
 import { ago, shortAddress, type IndexerReporter } from "@plimsoll/sdk";
 import { Breadcrumb } from "@/components/Breadcrumb";
 import { Skeleton, nowSecs } from "@/components/ui";
@@ -18,7 +19,6 @@ import { indexer, loadReporters } from "@/lib/data";
 <<<<<<< HEAD
 <<<<<<< HEAD
 <<<<<<< HEAD
-=======
 import { reporterHref } from "@/lib/reporter-profile";
 >>>>>>> pr-174
 import { groupReporters, updatedAt } from "@/lib/reporters";
@@ -199,6 +199,21 @@ import {
   type SortDirection,
 } from "@/lib/reporters";
 >>>>>>> pr-184
+=======
+import {
+  DEFAULT_REPORTER_FILTER,
+  REPORTER_SORTS,
+  SORT_LABELS,
+  activeFilterCount,
+  defaultFilterPanelOpen,
+  filterReporters,
+  groupReporters,
+  parseReporterSort,
+  readFilterPanelOpen,
+  updatedAt,
+  writeFilterPanelOpen,
+  type ReporterFilter,
+} from "@/lib/reporters";
 
 export default function ReportersPage() {
   const [reporters, setReporters] = useState<IndexerReporter[] | null>(null);
@@ -209,10 +224,15 @@ export default function ReportersPage() {
   const [sort, setSort] = useState<ReporterSort>(DEFAULT_REPORTER_SORT);
   const [filtersOpen, setFiltersOpen] = useState(true);
   const filterToggle = useRef<HTMLButtonElement>(null);
-=======
   const [sort, setSort] = useState<ReporterSort>("name");
   const [direction, setDirection] = useState<SortDirection>("asc");
 >>>>>>> pr-184
+=======
+  const [filter, setFilter] = useState<ReporterFilter>(DEFAULT_REPORTER_FILTER);
+  // Closed for the first paint, then the stored choice (or the viewport
+  // default) is applied in an effect so the server and client markup match.
+  const [panelOpen, setPanelOpen] = useState(false);
+  const toggle = useRef<HTMLButtonElement>(null);
   const noIndexer = indexer === null;
   const [intervalValue, setIntervalValue] = useRefreshIntervalSetting();
   const cancelRef = useRef<(() => void) | null>(null);
@@ -240,7 +260,6 @@ export default function ReportersPage() {
   const { refresh } = useAutoRefresh(fetch, intervalValue);
 
   const groups = reporters ? groupReporters(reporters).filter((g) => g.reporters.length > 0) : [];
-=======
   // Without a stored choice, open on desktop and closed on a narrow screen.
   useEffect(() => {
     const stored = readPanelPreference(window.localStorage);
@@ -274,6 +293,23 @@ export default function ReportersPage() {
   const ariaSort = (column: ReporterSort) =>
     sort === column ? (direction === "asc" ? "ascending" : "descending") : "none";
 >>>>>>> pr-184
+=======
+  useEffect(() => {
+    const stored = readFilterPanelOpen(typeof window === "undefined" ? null : window.localStorage);
+    const desktop =
+      typeof window !== "undefined" && window.matchMedia("(min-width: 720px)").matches;
+    setPanelOpen(stored ?? defaultFilterPanelOpen(desktop));
+  }, []);
+
+  const setPanel = (open: boolean) => {
+    setPanelOpen(open);
+    writeFilterPanelOpen(typeof window === "undefined" ? null : window.localStorage, open);
+  };
+
+  const filtered = reporters ? filterReporters(reporters, filter) : [];
+  const groups = groupReporters(filtered).filter((g) => g.reporters.length > 0);
+  const filtersActive = activeFilterCount(filter);
+  const clearFilters = () => setFilter(DEFAULT_REPORTER_FILTER);
 
   return (
     <>
@@ -412,7 +448,6 @@ export default function ReportersPage() {
         <p className="notice notice-info mt">
           No reporter matches “{query.trim()}”. Try a different name or address.
         </p>
-=======
       {groups.length > 0 ? (
         <div className="spread mt" style={{ alignItems: "flex-end", gap: 12 }}>
           <label style={{ maxWidth: 200 }}>
@@ -436,6 +471,87 @@ export default function ReportersPage() {
           </button>
         </div>
 >>>>>>> pr-184
+=======
+      {reporters && reporters.length > 0 ? (
+        <section className="card mt" aria-labelledby="reporter-filters-heading">
+          <div className="spread">
+            <div className="row">
+              <h2 id="reporter-filters-heading" style={{ margin: 0 }}>
+                Filters
+              </h2>
+              {!panelOpen && filtersActive > 0 ? (
+                <span className="pill pill-unknown">
+                  {filtersActive} active filter{filtersActive === 1 ? "" : "s"}
+                </span>
+              ) : null}
+            </div>
+            <button
+              ref={toggle}
+              type="button"
+              className="secondary"
+              aria-expanded={panelOpen}
+              aria-controls="reporter-filter-panel"
+              onClick={() => setPanel(!panelOpen)}
+            >
+              {panelOpen ? "Hide filters" : "Show filters"}
+            </button>
+          </div>
+          <div
+            id="reporter-filter-panel"
+            className="filter-panel"
+            hidden={!panelOpen}
+            onKeyDown={(e) => {
+              if (e.key !== "Escape") return;
+              e.preventDefault();
+              setPanel(false);
+              toggle.current?.focus();
+            }}
+          >
+            <label>
+              Search reporters
+              <input
+                type="search"
+                value={filter.query}
+                onChange={(e) => setFilter((f) => ({ ...f, query: e.target.value }))}
+                placeholder="Name, address or role"
+              />
+            </label>
+            <label>
+              Sort by
+              <select
+                value={filter.sort}
+                onChange={(e) =>
+                  setFilter((f) => ({ ...f, sort: parseReporterSort(e.target.value) }))
+                }
+              >
+                {REPORTER_SORTS.map((sort) => (
+                  <option key={sort} value={sort}>
+                    {SORT_LABELS[sort]}
+                  </option>
+                ))}
+              </select>
+            </label>
+            {filtersActive > 0 ? (
+              <div style={{ alignSelf: "end" }}>
+                <button type="button" className="secondary" onClick={clearFilters}>
+                  Clear filters
+                </button>
+              </div>
+            ) : null}
+          </div>
+          <p className="sub" style={{ margin: "12px 0 0" }}>
+            Showing {filtered.length} of {reporters.length} reporters.
+          </p>
+        </section>
+      ) : null}
+
+      {reporters && reporters.length > 0 && filtered.length === 0 ? (
+        <div className="notice notice-info mt">
+          <p>No reporters match this search.</p>
+          <button type="button" className="secondary" onClick={clearFilters}>
+            Clear filters
+          </button>
+        </div>
       ) : null}
 
       {groups.map((group) => (

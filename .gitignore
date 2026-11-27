@@ -13,3 +13,6 @@ test-results/
 playwright-report/
 blob-report/
 playwright/.cache/
+# Playwright output
+apps/web/test-results/
+apps/web/playwright-report/
