@@ -319,6 +319,13 @@ function AssetContent({ query }: { query: ReturnType<typeof assetFromSearch> }) 
     if (sac) setLastAsset(sac);
   }, [sac]);
 
+  // Remember the last asset opened so the homepage can restore it after a
+  // reload. Every navigation path that opens an asset passes through this
+  // page, so storing here keeps the value consistent.
+  useEffect(() => {
+    if (sac) setLastAsset(sac);
+  }, [sac]);
+
   if (!query.ok) {
     return (
       <section className="card mt" aria-labelledby="asset-query-heading">

@@ -202,6 +202,18 @@ export default function Home() {
     });
   }, [router]);
 
+  useEffect(() => {
+    if (restorationAttempted) return;
+    restorationAttempted = true;
+
+    void attemptRestore({
+      getStored: getLastAsset,
+      clearStored: clearLastAsset,
+      loadAsset,
+      navigate: (sac) => router.push(`/asset/?sac=${sac}`),
+    });
+  }, [router]);
+
   const source = assets?.[0]?.source;
   const filtered =
     assets && debouncedQuery.trim()
