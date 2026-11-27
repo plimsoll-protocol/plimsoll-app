@@ -6,12 +6,20 @@ import { ago, shortAddress, type IndexerReporter } from "@plimsoll/sdk";
 import { Skeleton, nowSecs } from "@/components/ui";
 import { config, explorer } from "@/lib/config";
 import { indexer, loadReporters } from "@/lib/data";
-import { groupReporters, updatedAt } from "@/lib/reporters";
+import {
+  REPUTATION_TOOLTIP,
+  groupReporters,
+  reputationOf,
+  updatedAt,
+  type Sort,
+  type SortKey,
+} from "@/lib/reporters";
 
 export default function ReportersPage() {
   const [reporters, setReporters] = useState<IndexerReporter[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [now, setNow] = useState(nowSecs());
+  const [sort, setSort] = useState<Sort>({ key: "name", direction: "asc" });
   const noIndexer = indexer === null;
 
   useEffect(() => {
@@ -30,7 +38,17 @@ export default function ReportersPage() {
     };
   }, []);
 
-  const groups = reporters ? groupReporters(reporters).filter((g) => g.reporters.length > 0) : [];
+  const groups = reporters
+    ? groupReporters(reporters, sort).filter((g) => g.reporters.length > 0)
+    : [];
+
+  const changeKey = (key: SortKey) =>
+    // Reputation is most useful best-first; names stay A–Z. The direction
+    // button can reverse either afterwards.
+    setSort({ key, direction: key === "reputation" ? "desc" : "asc" });
+
+  const ariaSort = (key: SortKey) =>
+    sort.key === key ? (sort.direction === "asc" ? "ascending" : "descending") : "none";
 
   return (
     <>
@@ -81,6 +99,28 @@ export default function ReportersPage() {
         </p>
       ) : null}
 
+      {groups.length > 0 ? (
+        <div className="row mt" style={{ alignItems: "flex-end", gap: 12 }}>
+          <label style={{ maxWidth: 220, margin: 0 }}>
+            Sort by
+            <select value={sort.key} onChange={(e) => changeKey(e.target.value as SortKey)}>
+              <option value="name">Name</option>
+              <option value="reputation">Reputation</option>
+            </select>
+          </label>
+          <button
+            type="button"
+            className="secondary"
+            onClick={() =>
+              setSort((s) => ({ ...s, direction: s.direction === "asc" ? "desc" : "asc" }))
+            }
+            aria-label={`Sort direction: ${sort.direction === "asc" ? "ascending" : "descending"}. Activate to reverse.`}
+          >
+            {sort.direction === "asc" ? "Ascending ↑" : "Descending ↓"}
+          </button>
+        </div>
+      ) : null}
+
       {groups.map((group) => (
         <section key={group.role} className="mt" aria-labelledby={`role-${group.role}`}>
           <div className="spread">
@@ -93,19 +133,26 @@ export default function ReportersPage() {
           <div className="table-wrap">
             <table>
               <caption className="sr-only">
-                Registered {group.heading.toLowerCase()}, with their Stellar account and the last
-                update to their entry
+                Registered {group.heading.toLowerCase()}, with their Stellar account, registry
+                reputation score and the last update to their entry
               </caption>
               <thead>
                 <tr>
-                  <th scope="col">Name</th>
+                  <th scope="col" aria-sort={ariaSort("name")}>
+                    Name
+                  </th>
                   <th scope="col">Address</th>
+                  <th scope="col" aria-sort={ariaSort("reputation")}>
+                    <span title={REPUTATION_TOOLTIP}>Reputation</span>
+                    <span className="sr-only">: {REPUTATION_TOOLTIP}</span>
+                  </th>
                   <th scope="col">Last update</th>
                 </tr>
               </thead>
               <tbody>
                 {group.reporters.map((reporter) => {
                   const at = updatedAt(reporter.updated_at);
+                  const reputation = reputationOf(reporter);
                   return (
                     <tr key={reporter.address}>
                       <td>{reporter.name || "—"}</td>
@@ -119,6 +166,14 @@ export default function ReportersPage() {
                         >
                           {shortAddress(reporter.address, 8)}
                         </a>
+                      </td>
+                      <td
+                        className="num"
+                        title={
+                          reputation === null ? "No reputation score recorded" : undefined
+                        }
+                      >
+                        {reputation === null ? "—" : reputation.toLocaleString()}
                       </td>
                       <td className="num">
                         {at ? (

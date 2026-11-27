@@ -80,6 +80,8 @@ export interface IndexerReporter {
   role: "auditor" | "transcriber" | "supply_poster";
   name: string;
   updated_at: string;
+  /** Reputation score from the registry, when the indexer publishes one. */
+  reputation?: number;
 }
 
 export interface IndexerNetwork {
