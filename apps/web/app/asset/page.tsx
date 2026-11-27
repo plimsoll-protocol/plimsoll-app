@@ -27,6 +27,7 @@ import {
   CopyButton,
   DisputeConfirmModal,
   Gauge,
+  HashVerificationStatus,
   Skeleton,
   Stat,
   StatusPill,
@@ -36,6 +37,7 @@ import {
   ratioText,
   statusOf,
   type DisputedReportDetails,
+  type HashVerificationState,
 } from "@/components/ui";
 import { LiveUpdates } from "@/components/LiveUpdates";
 import { assetFromSearch } from "@/lib/asset-query";
@@ -819,16 +821,26 @@ function ReportRow({
             </a>
             <div>
               Hash <span className="mono">{shortAddress(report.docHash, 8)}</span>{" "}
-              <CopyButton value={report.docHash} label="document hash" />
+              <CopyButton value={report.docHash} label="document hash" variant="icon" />
             </div>
             <DocCheck uri={report.docUri} hash={report.docHash} />
           </>
         ) : (
-          <span className="sub">
-            <code>{report.docUri}</code>
-            <br />
-            Not a web link, so it is shown as text and not checked here.
-          </span>
+          <>
+            <span className="sub">
+              <code>{report.docUri}</code>
+            </span>
+            {report.docHash ? (
+              <div>
+                Hash <span className="mono">{shortAddress(report.docHash, 8)}</span>{" "}
+                <CopyButton value={report.docHash} label="document hash" variant="icon" />
+              </div>
+            ) : null}
+            <div className="sub hash-check-row">
+              <HashVerificationStatus state={{ kind: "pending" }} />
+              <span>Not a web link, so it is shown as text and not checked here.</span>
+            </div>
+          </>
         )}
       </td>
       {onDispute ? (
@@ -859,7 +871,10 @@ function ReportRow({
 }
 
 type CheckState =
-  { kind: "idle" } | { kind: "busy" } | { kind: "ok" } | { kind: "bad"; msg: string };
+  | { kind: "idle" }
+  | { kind: "busy" }
+  | { kind: "ok" }
+  | { kind: "bad"; reason: "mismatch" | "fetch"; msg: string };
 
 function DocCheck({ uri, hash }: { uri: string; hash: string }) {
   const [state, setState] = useState<CheckState>({ kind: "idle" });
@@ -869,29 +884,48 @@ function DocCheck({ uri, hash }: { uri: string; hash: string }) {
       const res = await fetch(uri);
       if (!res.ok) throw new Error(`download failed (${res.status})`);
       const ok = await matchesHash(new Uint8Array(await res.arrayBuffer()), hash);
-      setState(ok ? { kind: "ok" } : { kind: "bad", msg: "hash does not match" });
+      setState(
+        ok
+          ? { kind: "ok" }
+          : { kind: "bad", reason: "mismatch", msg: "hash does not match" },
+      );
     } catch (e) {
-      setState({ kind: "bad", msg: e instanceof Error ? e.message : "could not fetch (CORS?)" });
+      setState({
+        kind: "bad",
+        reason: "fetch",
+        msg: e instanceof Error ? e.message : "could not fetch (CORS?)",
+      });
     }
   }, [uri, hash]);
+
+  const verificationState: HashVerificationState =
+    state.kind === "ok"
+      ? { kind: "verified" }
+      : state.kind === "bad"
+        ? { kind: "failed", reason: state.reason, message: state.msg }
+        : { kind: "pending", checking: state.kind === "busy" };
+
   return (
-    <div className="sub" aria-live="polite">
-      {state.kind === "idle" ? (
-        <button
-          type="button"
-          className="secondary"
-          style={{ padding: "2px 8px", fontSize: "0.8rem", marginTop: 4 }}
-          onClick={run}
-        >
-          Verify hash
-        </button>
-      ) : state.kind === "busy" ? (
-        "Checking…"
-      ) : state.kind === "ok" ? (
-        <span style={{ color: "var(--ok)" }}>Hash matches</span>
-      ) : (
-        <span style={{ color: "var(--bad)" }}>{state.msg}</span>
-      )}
+    <div className="sub hash-check-row">
+      <HashVerificationStatus state={verificationState} />
+      <span aria-live="polite">
+        {state.kind === "idle" ? (
+          <button
+            type="button"
+            className="secondary"
+            style={{ padding: "2px 8px", fontSize: "0.8rem" }}
+            onClick={run}
+          >
+            Verify hash
+          </button>
+        ) : state.kind === "busy" ? (
+          "Checking…"
+        ) : state.kind === "ok" ? (
+          <span style={{ color: "var(--ok)" }}>Hash matches</span>
+        ) : (
+          <span style={{ color: "var(--bad)" }}>{state.msg}</span>
+        )}
+      </span>
     </div>
   );
 }
